@@ -40,7 +40,8 @@ class DisplayFrame() :
         
         self.img_height = img_height
         self.img_width = img_width
-        
+        self.img_size = np.array([img_width, img_height])
+
         self.writer = None
         
         # 表示用フレームの作成   (2面(current,next)×高さ×幅×色)
@@ -157,8 +158,8 @@ def console_print(log_f, message, both=False, end=None) :
     if log_f :
         log_f.write(message + '\n')
 
-# 結果の解析と表示
-def parse_result(res, disp_frame, request_id, labels_map, prob_threshold, frame_number, log_f=None) :
+# 結果の取り出し
+def parse_result(res, labels_map, prob_threshold, frame_number, all_result, log_f=None) :
     # print(res)
     #  -> 例：(1, 1, 100, 7)        100:バウンディングボックスの数
     #                               7: [image_id, label, conf, x_min, y_min, x_max, y_max]
@@ -169,14 +170,18 @@ def parse_result(res, disp_frame, request_id, labels_map, prob_threshold, frame_
     # バウンディングボックス毎の結果を取得
     res_array = res[0][0]
 
+    raw_result = []
     for obj in res_array:
         conf = obj[2]                       # confidence for the predicted class(スコア)
         if conf > prob_threshold:           # 閾値より大きいものだけ処理
-            class_id = int(obj[1])                         # クラスID
-            left     = int(obj[3] * disp_frame.img_width)  # バウンディングボックスの左上のX座標
-            top      = int(obj[4] * disp_frame.img_height) # バウンディングボックスの左上のY座標
-            right    = int(obj[5] * disp_frame.img_width)  # バウンディングボックスの右下のX座標
-            bottom   = int(obj[6] * disp_frame.img_height) # バウンディングボックスの右下のY座標
+            class_id = int(obj[1])  # クラスID
+            left     = obj[3]       # バウンディングボックスの左上のX座標
+            top      = obj[4]       # バウンディングボックスの左上のY座標
+            right    = obj[5]       # バウンディングボックスの右下のX座標
+            bottom   = obj[6]       # バウンディングボックスの右下のY座標
+            
+            pt1 = np.array([left,  top   ])
+            pt2 = np.array([right, bottom])
             
             # 検出結果
             # ラベルが定義されていればラベルを読み出し、なければclass ID
@@ -187,13 +192,9 @@ def parse_result(res, disp_frame, request_id, labels_map, prob_threshold, frame_
                     class_name = str(class_id)
             else :
                 class_name = str(class_id)
-            # 結果をログファイルorコンソールに出力
-            console_print(log_f, f'{frame_number:3}:Class={class_name:15}({class_id:3}) Confidence={conf:4f} Location=({int(left)},{int(top)})-({int(right)},{int(bottom)})', False)
             
-            # 検出枠の描画
-            box_str = f"{class_name} {round(conf * 100, 1)}%"
-            disp_frame.draw_box(request_id, box_str, class_id, left, top, right, bottom)
-
+            raw_result.append({"class_id":class_id, "class_name":class_name, "conf":conf, "pt1":pt1, "pt2":pt2})
+    all_result[frame_number] = raw_result
     return
 # ================================================================================
 
@@ -386,10 +387,13 @@ def main():
     # フレーム測定用タイマ
     prev_time = time.time()
     
+    # すべての結果
+    all_result = {}
+    
     while cap.isOpened():           # キャプチャストリームがオープンされてる間ループ
         # 画像の前処理 =============================================================================
         preprocess_start = time.time()                          # 前処理開始時刻            --------------------------------
-
+        
         # 現在のフレーム番号表示
         print(f'frame_number: {frame_number:5d} / {all_frames}', end='\r')
         # 画像キャプチャと表示/入力用画像を作成
@@ -419,7 +423,21 @@ def main():
             parse_start = time.time()                           # 解析処理開始時刻          --------------------------------
             res = async_queue[cur_request_id].get_tensor(output_blob).data[:]
             
-            parse_result(res, disp_frame, cur_request_id, labels_map, args.prob_threshold, frame_number, log_f)
+            parse_result(res, labels_map, args.prob_threshold, frame_number, all_result, log_f)
+            raw_result = all_result.pop(frame_number)       # 辞書から要素を取り出して削除
+            
+            for rst in raw_result :
+                # 結果をログファイルorコンソールに出力
+                class_id   = rst["class_id"]
+                class_name = rst["class_name"]
+                conf       = rst["conf"]
+                pt1 = (rst["pt1"] * disp_frame.img_size).astype(int)
+                pt2 = (rst["pt2"] * disp_frame.img_size).astype(int)
+                console_print(log_f, f'{frame_number:3}:Class={class_name:15}({class_id:3}) Confidence={conf:4f} Location=({pt1[0]},{pt1[1]})-({pt2[0]},{pt2[1]})', False)
+                
+                # 検出枠の描画
+                box_str = f'{class_name} {round(conf * 100, 1)}%'
+                disp_frame.draw_box(cur_request_id, box_str, class_id, pt1[0], pt1[1], pt2[0], pt2[1])
             
             parse_end = time.time()                             # 解析処理終了時刻          --------------------------------
             parse_time = parse_end - parse_start                # 解析処理開始時間
