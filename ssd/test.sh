@@ -130,7 +130,10 @@ execute() {
 		local LOG_FILE=${LOG_NAME_BASE}.log
 		EXT_OPTION+=" --save ${SAVE_NAME} --time ${TIME_FILE} --log ${LOG_FILE}"
 	fi
-	python3 ${MAIN_SCRIPT} --device=${device} --input ${INPUT_FILE} --label ${LABEL_FILE} --model ${MODEL_FILE} ${EXT_OPTION}
+	command="python3 ${MAIN_SCRIPT} --device=${device} --input ${INPUT_FILE} --label ${LABEL_FILE} --model ${MODEL_FILE} ${EXT_OPTION}"
+	echo "COMMAND : ${command}"
+	eval ${command}
+	
 	MAIN_RET=$?
 	if [[ "${log_flag}" == "yes" ]] ; then
 		# echo "RET : ${MAIN_RET}"
