@@ -8,14 +8,15 @@ import cv2
 import numpy as np
 
 # openvino.inference_engine のバージョン取得
-# from openvino.inference_engine import get_version as ov_get_version
-# ov_vession_str = ov_get_version()
-# print(ov_vession_str)               # バージョン2019には '2.1.custom_releases/2019/R～'という文字列が入っている
+from openvino.runtime import get_version as ov_get_version
+ov_vession_str = ov_get_version()
+print(ov_vession_str)               # バージョン2019には '2.1.custom_releases/2019/R～'という文字列が入っている
                                     # バージョン2020には '～-releases/2020/～'という文字列が入っている
                                     # バージョン2021には '～-releases/2021/～'という文字列が入っている
                                     # バージョン2022には '～-releases/2022/～'という文字列が入っている
 
-from openvino.inference_engine import IENetwork, IECore
+from openvino.runtime import Core as ov_Core
+from openvino.runtime import AsyncInferQueue as ov_AsyncInferQueue
 
 
 # 表示フレームクラス ==================================================================
@@ -32,7 +33,7 @@ class DisplayFrame() :
                     ( 255, 255, 255)          # 7 (白)
                 ]
     # 初期化
-    def __init__(self, img_height, img_width) :
+    def __init__(self, img_height, img_width, num_frame) :
         # インスタンス変数の初期化
         self.STATUS_LINE_HIGHT    = 15                              # ステータス行の1行あたりの高さ
         self.STATUS_AREA_HIGHT    =  self.STATUS_LINE_HIGHT * 6 + 8 # ステータス領域の高さは6行分と余白
@@ -44,7 +45,7 @@ class DisplayFrame() :
         
         # 表示用フレームの作成   (2面(current,next)×高さ×幅×色)
         self.disp_height = self.img_height + self.STATUS_AREA_HIGHT                    # 情報表示領域分を追加
-        self.disp_frame = np.zeros((2, self.disp_height, img_width, 3), np.uint8)
+        self.disp_frame = np.zeros((num_frame, self.disp_height, img_width, 3), np.uint8)
     
     def STATUS_LINE_Y(self, line) : 
         return self.img_height + self.STATUS_LINE_HIGHT * (line + 1)
@@ -157,20 +158,21 @@ def console_print(log_f, message, both=False, end=None) :
         log_f.write(message + '\n')
 
 # 結果の解析と表示
-def parse_result(net, res, disp_frame, request_id, labels_map, prob_threshold, frame_number, log_f=None) :
-    out_blob = list(net.outputs.keys())[0]
-    # print(res[out_blob].shape)
-    #  -> 例：(1, 1, 200, 7)        200:バウンディングボックスの数
+def parse_result(res, disp_frame, request_id, labels_map, prob_threshold, frame_number, log_f=None) :
+    # print(res)
+    #  -> 例：(1, 1, 100, 7)        100:バウンディングボックスの数
+    #                               7: [image_id, label, conf, x_min, y_min, x_max, y_max]
     # データ構成は
-    # https://docs.openvinotoolkit.org/2019_R1/_pedestrian_and_vehicle_detector_adas_0001_description_pedestrian_and_vehicle_detector_adas_0001.html
-    # の「outputs」を参照
-    
-    res_array = res[out_blob].buffer[0][0]
+    # https://docs.openvino.ai/2022.1/omz_models_model_ssdlite_mobilenet_v2.html
+    # 等の「outputs」の 「Converted Model」を参照
+
+    # バウンディングボックス毎の結果を取得
+    res_array = res[0][0]
 
     for obj in res_array:
         conf = obj[2]                       # confidence for the predicted class(スコア)
         if conf > prob_threshold:           # 閾値より大きいものだけ処理
-            class_id = int(obj[1])                          # クラスID
+            class_id = int(obj[1])                         # クラスID
             left     = int(obj[3] * disp_frame.img_width)  # バウンディングボックスの左上のX座標
             top      = int(obj[4] * disp_frame.img_height) # バウンディングボックスの左上のY座標
             right    = int(obj[5] * disp_frame.img_width)  # バウンディングボックスの右下のX座標
@@ -206,10 +208,9 @@ def prepare_disp_and_input(cap, disp_frame, request_id, input_shape) :
     disp_frame.init_image(request_id, img_frame)
     
     # 入力用フレームの作成
-    input_n, input_colors, input_height, input_width = input_shape
+    input_n, input_height, input_width, input_colors = input_shape
     in_frame = cv2.resize(img_frame, (input_width, input_height))       # リサイズ
-    in_frame = in_frame.transpose((2, 0, 1))                            # HWC →  CHW
-    in_frame = in_frame.reshape(input_shape)                            # CHW → BCHW
+    in_frame = in_frame.reshape(input_shape)                            # HWC → BHWC   ※ 旧バージョンはBCHWだった
     
     return ret, in_frame
 # ================================================================================
@@ -221,7 +222,7 @@ def main():
     args = build_argparser().parse_args()
     
     model_xml = args.model                                      # モデルファイル名(xml)
-    model_bin = os.path.splitext(model_xml)[0] + ".bin"         # モデルファイル名(bin)
+    # model_bin = os.path.splitext(model_xml)[0] + ".bin"         # モデルファイル名(bin)
     
     no_disp = args.no_disp
     
@@ -262,75 +263,46 @@ def main():
     # 初期状態のsync/asyncモード切替
     is_async_mode = not args.sync
     
-    # 指定されたデバイスの plugin の初期化
+    # 推論エンジンの初期化
     log.info("Creating Inference Engine...")
-    ie = IECore()
+    core = ov_Core()
+    
     # 拡張ライブラリのロード(CPU使用時のみ)
     if args.cpu_extension and 'CPU' in args.device:
         log.info("Loading Extension Library...")
-        ie.add_extension(args.cpu_extension, "CPU")
+        core.add_extension(args.cpu_extension)
     
     # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
-    log.info(f"Loading model files:\n\t{model_xml}\n\t{model_bin}\n\t{model_label}")
-    net = ie.read_network(model=model_xml, weights=model_bin)
+    log.info(f"Loading model files:\n\t{model_xml}\n\t{model_label}")
+    model = core.read_model(model_xml)      # xmlとbinが同名ならbinは省略可能
     
-    """
-    # 未サポートレイヤの確認
-    if "CPU" in args.device:
-        # サポートしているレイヤの一覧
-        supported_layers = ie.query_network(net, "CPU")
-        ### # netで使用されているレイヤでサポートしているレイヤの一覧にないもの
-        ### not_supported_layers = [l for l in net.layers.keys() if l not in supported_layers]
-        # netで使用されているレイヤ一覧
-        if "ngraph" in sys.modules :            # ngraphがインポート済みかで判定
-            # バージョン 2021.x以降
-            used_layers = [l.friendly_name for l in ngraph.function_from_cnn(net).get_ordered_ops()]
-        else :
-            # バージョン 2020.x以前
-            used_layers = list(net.layers.keys())
-        # netで使用されているレイヤでサポートしているレイヤの一覧にないもの
-        not_supported_layers = [l for l in used_layers if l not in supported_layers]
-        # サポートされていないレイヤがある？
-        if len(not_supported_layers) != 0:
-            # エラー終了
-            log.error(f"Following layers are not supported by the plugin for specified device {args.device}:\n {', '.join(not_supported_layers)}")
-            log.error("Please try to specify cpu extensions library path in sample's command line parameters using -l "
-                      "or --cpu_extension command line argument")
-            sys.exit(1)
-    """
+    # 出力レイヤ数のチェックと名前の取得
+    log.info("Check outputs")
+    outputs = model.outputs
+    assert len(outputs) == 1, "Demo supports only single output topologies"
+    output_blob = model.outputs[0].get_any_name()       # 出力レイヤ名
+
+    # 入力レイヤ数のチェックと名前の取得
+    log.info("Check inputs")
+    inputs = model.inputs
     
-    # このプログラムは1出力のモデルのみサポートしているので、チェック
-    # print(net.outputs)
-    assert len(net.outputs) == 1, "Demo supports only single output topologies"
-
-    # 入力の準備
-    log.info("Preparing inputs")
-    # print(net.inputs)
-    # SSDのinputsは1とは限らないのでスキャンする
-    img_info_input_blob = None
-    inputs = net.input_info
-
-    for blob_name in inputs:
-
-        input_shape = inputs[blob_name].input_data.shape
-        # print(f'{blob_name}   {input_shape}')
-        if len(input_shape) == 4:
-            input_blob = blob_name
-        elif len(input_shape) == 2:
-           # こういう入力レイヤがあるものがある？
-           img_info_input_blob = blob_name
+    img_input_blob_name = None
+    img_info_input_blob_name = None
+    
+    for blob in inputs:
+        blob_name = blob.get_any_name()
+        blob_shape = blob.shape
+        print(f'{blob_name}   {blob_shape}')
+        if len(blob_shape) == 4:
+            img_input_blob_name = blob_name
+            img_input_blob_shape = blob_shape
+            input_n, img_input_height, img_input_width, input_colors = blob_shape
+        elif len(blob_shape) == 2:
+           img_info_input_blob_name = blob_name
         else:
-            raise RuntimeError(f"Unsupported {len(input_shape)} input layer '{ blob_name}'. Only 2D and 4D input layers are supported")
+            raise RuntimeError(f"Unsupported {len(blob_shape)} input layer '{blob_name}'. Only 2D and 4D input layers are supported")
     
-    # 入力画像情報の取得
-    input_n, input_colors, input_height, input_width = inputs[input_blob].input_data.shape
-
-    feed_dict = {}
-    # こういう入力レイヤがあるものがある？
-    if img_info_input_blob:
-        feed_dict[img_info_input_blob] = [input_height, input_width, 1]
-    
-    # キャプチャ
+    # キャプチャデバイス
     cap = cv2.VideoCapture(input_stream)
     
     # 幅と高さを取得
@@ -341,10 +313,10 @@ def main():
     org_frame_time = 1.0 / cap.get(cv2.CAP_PROP_FPS)                # オリジナルのフレーム時間
     # フレーム数
     all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    all_frames = 1 if all_frames != -1 and all_frames < 0 else all_frames
+    all_frames = 1 if all_frames != -1 and all_frames < 0 else all_frames   # -1なら静止画
     
     # 表示用フレームの作成   (2面(current,next)×高さ×幅×色)
-    disp_frame = DisplayFrame(img_height, img_width)
+    disp_frame = DisplayFrame(img_height, img_width, 2 if is_async_mode else 1)
     
     # 画像保存オプション
     # writer = None
@@ -355,12 +327,8 @@ def main():
         else :
             disp_frame.create_writer(args.save, org_frame_rate)
     
-    cur_request_id = 0
-    next_request_id = 1
-    
     # 初期状態のsync/asyncモードを表示
     log.info(f"Starting inference in {'async' if  is_async_mode else 'sync'} mode...")
-
     
     wait_key_code = 1
     
@@ -370,16 +338,24 @@ def main():
         is_async_mode = False       # 同期モードにする
         wait_key_code = 0           # 永久待ち
     
+    cur_request_id = 0          # 同期モードで初期化(ID=0のみ使用)
+    next_request_id = 0
     if is_async_mode:
+        # 非同期モード
         cur_request_id = 0
         next_request_id = 1
-    else :
-        cur_request_id = 0          # 同期モードではID=0のみ使用
-        next_request_id = 0
     
-    # プラグインへモデルをロード
+    # モデルのコンパイル
     log.info("Loading model to the plugin...")
-    exec_net = ie.load_network(network=net, num_requests=2, device_name=args.device)
+    compiled_model = core.compile_model(model, args.device)
+
+    # 推論キューの作成
+    if is_async_mode: 
+        # 非同期モードなら2面
+        async_queue = ov_AsyncInferQueue(compiled_model, 2)
+    else :
+        # 同期モードなら1面
+        async_queue = ov_AsyncInferQueue(compiled_model, 1)
     
     # 推論開始
     log.info("Starting inference...")
@@ -397,12 +373,15 @@ def main():
     
     if is_async_mode:
         # 非同期モード時は最初のフレームの推論を予約しておく
-        ret, feed_dict[input_blob] = prepare_disp_and_input(cap, disp_frame, cur_request_id, (input_n, input_colors, input_height, input_width))
+        feed_dict = {}
+        if img_info_input_blob_name:
+            feed_dict[img_info_input_blob_name] = [img_input_height, img_input_width, 1]
+        ret, feed_dict[img_input_blob_name] = prepare_disp_and_input(cap, disp_frame, cur_request_id, img_input_blob_shape)
         if not ret :
             print("failed to capture first frame.")
             sys.exit(1)
         # 推論予約 =============================================================================
-        exec_net.start_async(request_id=cur_request_id, inputs=feed_dict)
+        async_queue[cur_request_id].start_async(feed_dict)
     
     # フレーム測定用タイマ
     prev_time = time.time()
@@ -415,27 +394,32 @@ def main():
         print(f'frame_number: {frame_number:5d} / {all_frames}', end='\r')
         # 画像キャプチャと表示/入力用画像を作成
         # 非同期モード時は次のフレームとして
-        ret, feed_dict[input_blob] = prepare_disp_and_input(cap, disp_frame, next_request_id, (input_n, input_colors, input_height, input_width))
+        feed_dict = {}
+        if img_info_input_blob_name:
+            feed_dict[img_info_input_blob_name] = [img_input_height, img_input_width, 1]
+        ret, feed_dict[img_input_blob_name] = prepare_disp_and_input(cap, disp_frame, next_request_id, img_input_blob_shape)
         if not ret:
             # キャプチャ失敗
             break
         
         # 推論予約 =============================================================================
-        exec_net.start_async(request_id=next_request_id, inputs=feed_dict)
+        async_queue[next_request_id].start_async(feed_dict)
+        
         preprocess_end = time.time()                            # 前処理終了時刻            --------------------------------
         preprocess_time = preprocess_end - preprocess_start     # 前処理時間
         
         inf_start = time.time()                                 # 推論処理開始時刻          --------------------------------
+        
         # 推論結果待ち =============================================================================
-        if exec_net.requests[cur_request_id].wait(-1) == 0:
+        if async_queue[cur_request_id].wait_for(-1) :           # -1: 永久待ち
             inf_end = time.time()                               # 推論処理終了時刻          --------------------------------
             inf_time = inf_end - inf_start                      # 推論処理時間
             
             # 検出結果の解析 =============================================================================
             parse_start = time.time()                           # 解析処理開始時刻          --------------------------------
-            res = exec_net.requests[cur_request_id].output_blobs
+            res = async_queue[cur_request_id].get_tensor(output_blob).data[:]
             
-            parse_result(net, res, disp_frame, cur_request_id, labels_map, args.prob_threshold, frame_number, log_f)
+            parse_result(res, disp_frame, cur_request_id, labels_map, args.prob_threshold, frame_number, log_f)
             
             parse_end = time.time()                             # 解析処理終了時刻          --------------------------------
             parse_time = parse_end - parse_start                # 解析処理開始時間
