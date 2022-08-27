@@ -20,7 +20,7 @@ from openvino.runtime import AsyncInferQueue as ov_AsyncInferQueue
 
 
 # 表示フレームクラス ==================================================================
-class DisplayFrame() :
+class DispFrame() :
     # カラーパレット(8bitマシン風。ちょっと薄目)
     COLOR_PALETTE = [   #   B    G    R 
                     ( 128, 128, 128),         # 0 (灰)
@@ -32,68 +32,88 @@ class DisplayFrame() :
                     ( 128, 255, 255),         # 6 (黄)
                     ( 255, 255, 255)          # 7 (白)
                 ]
-    # 初期化
-    def __init__(self, img_height, img_width, num_frame) :
-        # インスタンス変数の初期化
-        self.STATUS_LINE_HIGHT    = 15                              # ステータス行の1行あたりの高さ
-        self.STATUS_AREA_HIGHT    =  self.STATUS_LINE_HIGHT * 6 + 8 # ステータス領域の高さは6行分と余白
+    
+    # ステータス領域サイズ
+    STATUS_LINE_HIGHT   = 15                            # ステータス行の1行あたりの高さ
+    STATUS_LINES        =  6                            # ステータス行数
+    STATUS_PADDING      =  8                            # ステータス領域の余白
+    STATUS_AREA_HIGHT   = STATUS_LINE_HIGHT * STATUS_LINES + STATUS_PADDING # ステータス領域の高さ
+    
+    def __init__(self, image, frame_number) :
+        # 画像にステータス表示領域を追加
+        self.image = cv2.copyMakeBorder(image, 0, self.STATUS_AREA_HIGHT, 0, 0, cv2.BORDER_CONSTANT, (0,0,0))
         
-        self.img_height = img_height
-        self.img_width = img_width
-        self.img_size = np.array([img_width, img_height])
-
-        self.writer = None
+        self.img_height = image.shape[0]
+        self.img_width  = image.shape[1]
+        self.img_size = np.array([self.img_width, self.img_height])
         
-        # 表示用フレームの作成   (2面(current,next)×高さ×幅×色)
-        self.disp_height = self.img_height + self.STATUS_AREA_HIGHT                    # 情報表示領域分を追加
-        self.disp_frame = np.zeros((num_frame, self.disp_height, img_width, 3), np.uint8)
+        self.frame_number = frame_number
+        
+    # 画像フレーム表示
+    def disp_image(self) :
+        cv2.imshow("Detection Results", self.image)                  # 表示
+    
+    # 検出枠の描画
+    def draw_box(self, str, class_id, pt1, pt2) :
+        left,  top    = pt1
+        right, bottom = pt2
+        
+        # 対象物の枠とラベルの描画
+        color = self.COLOR_PALETTE[class_id & 0x7]       # 表示色(IDの下一桁でカラーパレットを切り替える)
+        cv2.rectangle(self.image,    (left, top     ), (right,      bottom), color,  2)
+        cv2.rectangle(self.image,    (left, top + 20), (left + 160, top   ), color, -1)
+        cv2.putText(self.image, str, (left, top + 15), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 0))
+        
+        return
     
     def STATUS_LINE_Y(self, line) : 
         return self.img_height + self.STATUS_LINE_HIGHT * (line + 1)
     
-    def status_puts(self, frame_id, message, line) :
-        cv2.putText(self.disp_frame[frame_id], message, (10, self.STATUS_LINE_Y(line)), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 128, 128), 1)
+    def status_puts(self, message, line) :
+        cv2.putText(self.image, message, (10, self.STATUS_LINE_Y(line)), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 128, 128), 1)
     
-    # 画像フレーム初期化
-    def init_image(self, frame_id, frame) :
-        self.disp_frame[frame_id].fill(0)
-        self.disp_frame[frame_id, :self.img_height, :self.img_width] = frame
-   
-    # 画像フレーム表示
-    def disp_image(self, frame_id) :
-        cv2.imshow("Detection Results", self.disp_frame[frame_id])                  # 表示
-    
-    # 検出枠の描画
-    def draw_box(self, frame_id, str, class_id, left, top, right, bottom) :
-        # 対象物の枠とラベルの描画
-        color = self.COLOR_PALETTE[class_id & 0x7]       # 表示色(IDの下一桁でカラーパレットを切り替える)
-        cv2.rectangle(self.disp_frame[frame_id], (left, top), (right, bottom), color, 2)
-        cv2.rectangle(self.disp_frame[frame_id], (left, top+20), (left+160, top), color, -1)
-        cv2.putText(self.disp_frame[frame_id], str, (left, top + 15), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 0))
+    def convert_point(self, pt1, pt2) :
+        # 認識結果の座標を表示座標に変換
+        pt1 = (pt1 * self.img_size).astype(int)
+        pt2 = (pt2 * self.img_size).astype(int)
         
-        return
+        return pt1, pt2
+
+
+# ================================================================================
+# 画像保存クラス ==================================================================
+class ImageSave() :
+    # 初期化
+    def __init__(self, img_height, img_width) :
+        # イメージ領域サイズ
+        self.disp_width  = img_width
+        self.disp_height = img_height + DispFrame.STATUS_AREA_HIGHT
+
+        # 保存用ライタ
+        self.writer = None
     
     # JPEGファイル書き込み
-    def save_jpeg(self, jpeg_file, frame_id) :
+    def save_jpeg(self, jpeg_file, frame) :
         if jpeg_file :
-            cv2.imwrite(jpeg_file, self.disp_frame[frame_id])
+            cv2.imwrite(jpeg_file, frame.image)
     
     # 動画ファイルのライタ生成
     def create_writer(self, filename, frame_rate) :
         # フォーマット
         fmt = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
-        self.writer = cv2.VideoWriter(filename, fmt, frame_rate, (self.img_width, self.disp_height))
+        self.writer = cv2.VideoWriter(filename, fmt, frame_rate, (self.disp_width, self.disp_height))
     
     # 動画ファイル書き込み
-    def write_image(self, frame_id) :
+    def write_image(self, frame) :
         if self.writer:
-            self.writer.write(self.disp_frame[frame_id])
-
+            self.writer.write(frame.image)
+    
     # 動画ファイルのライタ解放
     def release_writer(self) :
         if self.writer:
             self.writer.release()
     
+
 # ================================================================================
 
 # コマンドラインパーサの構築 =====================================================
@@ -159,7 +179,10 @@ def console_print(log_f, message, both=False, end=None) :
         log_f.write(message + '\n')
 
 # 結果の取り出し
-def parse_result(res, labels_map, prob_threshold, frame_number, all_result, log_f=None) :
+def parse_result(res, output_blob, prob_threshold, frame, all_result) :
+    # output tensorの取り出し
+    res = res.get_tensor(output_blob).data[:]
+
     # print(res)
     #  -> 例：(1, 1, 100, 7)        100:バウンディングボックスの数
     #                               7: [image_id, label, conf, x_min, y_min, x_max, y_max]
@@ -170,7 +193,7 @@ def parse_result(res, labels_map, prob_threshold, frame_number, all_result, log_
     # バウンディングボックス毎の結果を取得
     res_array = res[0][0]
 
-    raw_result = []
+    raw_results = []
     for obj in res_array:
         conf = obj[2]                       # confidence for the predicted class(スコア)
         if conf > prob_threshold:           # 閾値より大きいものだけ処理
@@ -183,37 +206,28 @@ def parse_result(res, labels_map, prob_threshold, frame_number, all_result, log_
             pt1 = np.array([left,  top   ])
             pt2 = np.array([right, bottom])
             
-            # 検出結果
-            # ラベルが定義されていればラベルを読み出し、なければclass ID
-            if labels_map :
-                if len(labels_map) > class_id :
-                    class_name = labels_map[class_id]
-                else :
-                    class_name = str(class_id)
-            else :
-                class_name = str(class_id)
             
-            raw_result.append({"class_id":class_id, "class_name":class_name, "conf":conf, "pt1":pt1, "pt2":pt2})
-    all_result[frame_number] = raw_result
+            raw_results.append({"class_id":class_id, "conf":conf, "pt1":pt1, "pt2":pt2})
+    all_result[frame.frame_number] = raw_results
     return
 # ================================================================================
 
 # 表示&入力フレームの作成 =======================================================
-def prepare_disp_and_input(cap, disp_frame, request_id, input_shape) :
+def prepare_disp_and_input(cap, input_shape, frame_number) :
     ret, img_frame = cap.read()    # フレームのキャプチャ
     if not ret :
         # キャプチャ失敗
-        return ret, None
-    
-    # 表示用フレームの作成
-    disp_frame.init_image(request_id, img_frame)
+        return ret, None, None
     
     # 入力用フレームの作成
     input_n, input_height, input_width, input_colors = input_shape
     in_frame = cv2.resize(img_frame, (input_width, input_height))       # リサイズ
     in_frame = in_frame.reshape(input_shape)                            # HWC → BHWC   ※ 旧バージョンはBCHWだった
     
-    return ret, in_frame
+    # 表示用フレームの作成
+    disp_frame = DispFrame(img_frame, frame_number)
+
+    return ret, in_frame, disp_frame
 # ================================================================================
 
 def main():
@@ -222,11 +236,14 @@ def main():
     # コマンドラインオプションの解析
     args = build_argparser().parse_args()
     
+    # モデルファイル
     model_xml = args.model                                      # モデルファイル名(xml)
     # model_bin = os.path.splitext(model_xml)[0] + ".bin"         # モデルファイル名(bin)
     
+    # 非表示設定
     no_disp = args.no_disp
     
+    # ラベルファイル
     model_label = None
     if args.labels:
         model_label = args.labels
@@ -235,12 +252,6 @@ def main():
     if not os.path.isfile(model_label)  :
         log.warning("label file is not specified")
         model_label = None
-    
-    labels_map = None
-    if model_label:
-        # ラベルファイルの読み込み
-        with open(model_label, 'r') as f:
-            labels_map = [x.strip() for x in f]
     
     # 入力ファイル
     if args.input == 'cam':
@@ -264,6 +275,14 @@ def main():
     # 初期状態のsync/asyncモード切替
     is_async_mode = not args.sync
     
+    # ラベルファイル読み込み
+    labels_map = None
+    if model_label:
+        log.info(f"Loading label files: {model_label}")
+        # ラベルファイルの読み込み
+        with open(model_label, 'r') as f:
+            labels_map = [x.strip() for x in f]
+    
     # 推論エンジンの初期化
     log.info("Creating Inference Engine...")
     core = ov_Core()
@@ -274,33 +293,33 @@ def main():
         core.add_extension(args.cpu_extension)
     
     # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
-    log.info(f"Loading model files:\n\t{model_xml}\n\t{model_label}")
+    log.info(f"Loading model files: {model_xml}")
     model = core.read_model(model_xml)      # xmlとbinが同名ならbinは省略可能
     
     # 出力レイヤ数のチェックと名前の取得
     log.info("Check outputs")
     outputs = model.outputs
-    assert len(outputs) == 1, "Demo supports only single output topologies"
+    assert len(outputs) == 1, "Demo supports only single output topologies" # 出力レイヤ数は1のみ対応
     output_blob = model.outputs[0].get_any_name()       # 出力レイヤ名
 
     # 入力レイヤ数のチェックと名前の取得
     log.info("Check inputs")
     inputs = model.inputs
     
-    img_input_blob_name = None
-    img_info_input_blob_name = None
+    img_input_blob_name = None                  # 入力画像レイヤ
+    img_info_input_blob_name = None             # 入力画像情報レイヤ
     
     for blob in inputs:
-        blob_name = blob.get_any_name()
-        blob_shape = blob.shape
+        blob_name = blob.get_any_name()         # 名前
+        blob_shape = blob.shape                 # サイズ
         print(f'{blob_name}   {blob_shape}')
-        if len(blob_shape) == 4:
+        if len(blob_shape) == 4:                # 4次元なら入力画像レイヤ
             img_input_blob_name = blob_name
             img_input_blob_shape = blob_shape
             input_n, img_input_height, img_input_width, input_colors = blob_shape
-        elif len(blob_shape) == 2:
+        elif len(blob_shape) == 2:              # 2次元なら入力画像情報レイヤ
            img_info_input_blob_name = blob_name
-        else:
+        else:                                   # それ以外のレイヤが含まれていたらエラー
             raise RuntimeError(f"Unsupported {len(blob_shape)} input layer '{blob_name}'. Only 2D and 4D input layers are supported")
     
     # キャプチャデバイス
@@ -316,8 +335,8 @@ def main():
     all_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     all_frames = 1 if all_frames != -1 and all_frames < 0 else all_frames   # -1なら静止画
     
-    # 表示用フレームの作成   (2面(current,next)×高さ×幅×色)
-    disp_frame = DisplayFrame(img_height, img_width, 2 if is_async_mode else 1)
+    # 画像保存インスタンスの作成
+    img_save = ImageSave(img_height, img_width)
     
     # 画像保存オプション
     # writer = None
@@ -326,25 +345,29 @@ def main():
         if all_frames == 1 :
             jpeg_file = args.save
         else :
-            disp_frame.create_writer(args.save, org_frame_rate)
+            img_save.create_writer(args.save, org_frame_rate)
     
     # 初期状態のsync/asyncモードを表示
     log.info(f"Starting inference in {'async' if  is_async_mode else 'sync'} mode...")
     
-    wait_key_code = 1
+    # 1フレーム表示後の待ち時間
+    wait_key_time = 1
     
     # 動画か静止画かをチェック
     if all_frames == 1:
         # 1フレーム -> 静止画
         is_async_mode = False       # 同期モードにする
-        wait_key_code = 0           # 永久待ち
+        wait_key_time = 0           # 永久待ち
     
     cur_request_id = 0          # 同期モードで初期化(ID=0のみ使用)
     next_request_id = 0
     if is_async_mode:
-        # 非同期モード
+        # 非同期モードでは0と1を入れ替えて使う
         cur_request_id = 0
         next_request_id = 1
+    
+    # 表示フレーム保持用
+    disp_frame = [None, None]
     
     # モデルのコンパイル
     log.info("Loading model to the plugin...")
@@ -370,44 +393,52 @@ def main():
     render_time = 0
     
     # 現在のフレーム番号
-    frame_number = 1
+    infer_frame_number = 1      # 推論用フレーム番号
+    disp_frame_number  = 1      # 表示用フレーム番号
     
     if is_async_mode:
         # 非同期モード時は最初のフレームの推論を予約しておく
         feed_dict = {}
-        if img_info_input_blob_name:
-            feed_dict[img_info_input_blob_name] = [img_input_height, img_input_width, 1]
-        ret, feed_dict[img_input_blob_name] = prepare_disp_and_input(cap, disp_frame, cur_request_id, img_input_blob_shape)
+        ret, feed_dict[img_input_blob_name], disp_frame[cur_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number)
         if not ret :
             print("failed to capture first frame.")
             sys.exit(1)
+        if img_info_input_blob_name:
+            feed_dict[img_info_input_blob_name] = np.array([[img_input_height, img_input_width, 1]])
+        
         # 推論予約 =============================================================================
         async_queue[cur_request_id].start_async(feed_dict)
-    
+        
+        # フレーム番号更新
+        infer_frame_number += 1
+        
     # フレーム測定用タイマ
     prev_time = time.time()
     
     # すべての結果
     all_result = {}
     
-    while cap.isOpened():           # キャプチャストリームがオープンされてる間ループ
+    while True:
         # 画像の前処理 =============================================================================
         preprocess_start = time.time()                          # 前処理開始時刻            --------------------------------
         
         # 現在のフレーム番号表示
-        print(f'frame_number: {frame_number:5d} / {all_frames}', end='\r')
+        print(f'frame_number: {infer_frame_number:5d} / {all_frames}', end='\r')
         # 画像キャプチャと表示/入力用画像を作成
         # 非同期モード時は次のフレームとして
         feed_dict = {}
-        if img_info_input_blob_name:
-            feed_dict[img_info_input_blob_name] = [img_input_height, img_input_width, 1]
-        ret, feed_dict[img_input_blob_name] = prepare_disp_and_input(cap, disp_frame, next_request_id, img_input_blob_shape)
+        ret, feed_dict[img_input_blob_name], disp_frame[next_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number)
         if not ret:
             # キャプチャ失敗
             break
+        if img_info_input_blob_name:
+            feed_dict[img_info_input_blob_name] = np.array([[img_input_height, img_input_width, 1]])
         
         # 推論予約 =============================================================================
         async_queue[next_request_id].start_async(feed_dict)
+        
+        # フレーム番号更新
+        infer_frame_number += 1
         
         preprocess_end = time.time()                            # 前処理終了時刻            --------------------------------
         preprocess_time = preprocess_end - preprocess_start     # 前処理時間
@@ -421,23 +452,35 @@ def main():
             
             # 検出結果の解析 =============================================================================
             parse_start = time.time()                           # 解析処理開始時刻          --------------------------------
-            res = async_queue[cur_request_id].get_tensor(output_blob).data[:]
             
-            parse_result(res, labels_map, args.prob_threshold, frame_number, all_result, log_f)
-            raw_result = all_result.pop(frame_number)       # 辞書から要素を取り出して削除
+            # 現在の表示フレーム
+            cur_frame = disp_frame[cur_request_id]
             
-            for rst in raw_result :
-                # 結果をログファイルorコンソールに出力
+            parse_result(async_queue[cur_request_id], output_blob, args.prob_threshold, cur_frame, all_result)
+            raw_results = all_result.pop(disp_frame_number)       # 辞書から要素を取り出して削除
+            
+            for rst in raw_results :
+                # 結果を個別の変数にバラす
                 class_id   = rst["class_id"]
-                class_name = rst["class_name"]
                 conf       = rst["conf"]
-                pt1 = (rst["pt1"] * disp_frame.img_size).astype(int)
-                pt2 = (rst["pt2"] * disp_frame.img_size).astype(int)
-                console_print(log_f, f'{frame_number:3}:Class={class_name:15}({class_id:3}) Confidence={conf:4f} Location=({pt1[0]},{pt1[1]})-({pt2[0]},{pt2[1]})', False)
+                pt1, pt2 = cur_frame.convert_point(rst["pt1"], rst["pt2"])
+                
+                # 検出結果の文字列化
+                # ラベルが定義されていればラベルを読み出し、なければclass ID
+                if labels_map :
+                    if len(labels_map) > class_id :
+                        class_name = labels_map[class_id]
+                    else :
+                        class_name = str(class_id)
+                else :
+                    class_name = str(class_id)
+                
+                # 結果をログファイルorコンソールに出力
+                console_print(log_f, f'{disp_frame_number:3}:Class={class_name:15}({class_id:3}) Confidence={conf:4f} Location=({pt1[0]},{pt1[1]})-({pt2[0]},{pt2[1]})', False)
                 
                 # 検出枠の描画
                 box_str = f'{class_name} {round(conf * 100, 1)}%'
-                disp_frame.draw_box(cur_request_id, box_str, class_id, pt1[0], pt1[1], pt2[0], pt2[1])
+                cur_frame.draw_box(box_str, class_id, pt1, pt2)
             
             parse_end = time.time()                             # 解析処理終了時刻          --------------------------------
             parse_time = parse_end - parse_start                # 解析処理開始時間
@@ -445,7 +488,7 @@ def main():
             # 結果の表示 =============================================================================
             render_start = time.time()                          # 表示処理開始時刻          --------------------------------
             # 測定データの表示
-            frame_number_message    = f'frame_number   : {frame_number:5d} / {all_frames}'
+            frame_number_message    = f'frame_number   : {disp_frame_number:5d} / {all_frames}'
             if frame_time == 0 :
                 frame_time_message  =  'Frame time     : ---'
             else :
@@ -456,21 +499,22 @@ def main():
             async_mode_message      = f"Async mode is {' on' if is_async_mode else 'off'}. Processing request {cur_request_id}"
             
             # 結果の書き込み
-            disp_frame.status_puts(cur_request_id, frame_number_message, 0)
-            disp_frame.status_puts(cur_request_id, inf_time_message,     1)
-            disp_frame.status_puts(cur_request_id, parsing_time_message, 2)
-            disp_frame.status_puts(cur_request_id, render_time_message,  3)
-            disp_frame.status_puts(cur_request_id, frame_time_message,   4)
-            disp_frame.status_puts(cur_request_id, async_mode_message,   5)
+            cur_frame.status_puts(frame_number_message, 0)
+            cur_frame.status_puts(inf_time_message,     1)
+            cur_frame.status_puts(parsing_time_message, 2)
+            cur_frame.status_puts(render_time_message,  3)
+            cur_frame.status_puts(frame_time_message,   4)
+            cur_frame.status_puts(async_mode_message,   5)
+            
             # 表示
             if not no_disp :
-                disp_frame.disp_image(cur_request_id)        # 表示
+                cur_frame.disp_image()        # 表示
             
             # 画像の保存
             if jpeg_file :
-                disp_frame.save_jpeg(jpeg_file, cur_request_id)
+                img_save.save_jpeg(jpeg_file, cur_frame)
             # 保存が設定されていか否かはメソッド内でチェック
-            disp_frame.write_image(cur_request_id)
+            img_save.write_image(cur_frame)
             render_end = time.time()                            # 表示処理終了時刻          --------------------------------
             render_time = render_end - render_start             # 表示処理時間
         
@@ -478,22 +522,24 @@ def main():
         if is_async_mode:
             cur_request_id, next_request_id = next_request_id, cur_request_id
         
-        # タイミング調整 =============================================================================
-        wait_start = time.time()                            # タイミング待ち開始時刻    --------------------------------
-        key = cv2.waitKey(wait_key_code)
+        # キー入力取得 =============================================================================
+        wait_start = time.time()                            # キー待ち開始時刻    --------------------------------
+        key = cv2.waitKey(wait_key_time)
         if key == 27:
             # ESCキー
             break
-        wait_end = time.time()                              # タイミング待ち終了時刻    --------------------------------
-        wait_time = wait_end - wait_start                   # タイミング待ち時間
+        wait_end = time.time()                              # キー待ち終了時刻    --------------------------------
+        wait_time = wait_end - wait_start                   # キー待ち時間
         
         # フレーム処理終了 =============================================================================
         cur_time = time.time()                              # 現在のフレーム処理完了時刻
         frame_time = cur_time - prev_time                   # 1フレームの処理時間
         prev_time = cur_time
         if time_f :
-            time_f.write(f'{frame_number:5d}, {frame_time * 1000:.3f}, {preprocess_time * 1000:.3f}, {inf_time * 1000:.3f}, {parse_time * 1000:.3f}, {render_time * 1000:.3f}, {wait_key_code}, {wait_time * 1000:.3f}\n')
-        frame_number = frame_number + 1
+            time_f.write(f'{disp_frame_number:5d}, {frame_time * 1000:.3f}, {preprocess_time * 1000:.3f}, {inf_time * 1000:.3f}, {parse_time * 1000:.3f}, {render_time * 1000:.3f}, {wait_key_time}, {wait_time * 1000:.3f}\n')
+        
+        # 表示フレーム更新
+        disp_frame_number += 1
     
     # 後片付け
     if time_f :
@@ -503,7 +549,7 @@ def main():
         log_f.close()
     
     # 保存が設定されていか否かはメソッド内でチェック
-    disp_frame.release_writer()
+    img_save.release_writer()
     
     cv2.destroyAllWindows()
 
