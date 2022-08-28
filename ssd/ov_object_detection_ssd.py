@@ -39,15 +39,15 @@ class DispFrame() :
     STATUS_PADDING      =  8                            # ステータス領域の余白
     STATUS_AREA_HIGHT   = STATUS_LINE_HIGHT * STATUS_LINES + STATUS_PADDING # ステータス領域の高さ
     
-    def __init__(self, image, frame_number) :
+    def __init__(self, image, frame_number, all_frames) :
         # 画像にステータス表示領域を追加
         self.image = cv2.copyMakeBorder(image, 0, self.STATUS_AREA_HIGHT, 0, 0, cv2.BORDER_CONSTANT, (0,0,0))
         
         self.img_height = image.shape[0]
         self.img_width  = image.shape[1]
-        self.img_size = np.array([self.img_width, self.img_height])
         
         self.frame_number = frame_number
+        self.all_frames   = all_frames
         
     # 画像フレーム表示
     def disp_image(self) :
@@ -72,13 +72,24 @@ class DispFrame() :
     def status_puts(self, message, line) :
         cv2.putText(self.image, message, (10, self.STATUS_LINE_Y(line)), cv2.FONT_HERSHEY_COMPLEX, 0.5, (255, 128, 128), 1)
     
-    def convert_point(self, pt1, pt2) :
-        # 認識結果の座標を表示座標に変換
-        pt1 = (pt1 * self.img_size).astype(int)
-        pt2 = (pt2 * self.img_size).astype(int)
+    def disp_status(self, frame_time, inf_time, render_time, parse_time, is_async_mode) :
+        frame_number_message    = f'frame_number   : {self.frame_number:5d} / {self.all_frames}'
+        if frame_time == 0 :
+            frame_time_message  =  'Frame time     : ---'
+        else :
+            frame_time_message  = f'Frame time     : {(frame_time * 1000):.3f} ms    {(1/frame_time):.2f} fps'  # ここは前のフレームの結果
+        render_time_message     = f'Rendering time : {(render_time * 1000):.3f} ms'                             # ここは前のフレームの結果
+        inf_time_message        = f'Inference time : {(inf_time * 1000):.3f} ms'
+        parsing_time_message    = f'parse time     : {(parse_time * 1000):.3f} ms'
+        async_mode_message      = f"Async mode is {' on' if is_async_mode else 'off'}"
         
-        return pt1, pt2
-
+        # 結果の書き込み
+        self.status_puts(frame_number_message, 0)
+        self.status_puts(inf_time_message,     1)
+        self.status_puts(parsing_time_message, 2)
+        self.status_puts(render_time_message,  3)
+        self.status_puts(frame_time_message,   4)
+        self.status_puts(async_mode_message,   5)
 
 # ================================================================================
 # 画像保存クラス ==================================================================
@@ -112,7 +123,6 @@ class ImageSave() :
     def release_writer(self) :
         if self.writer:
             self.writer.release()
-    
 
 # ================================================================================
 
@@ -179,7 +189,10 @@ def console_print(log_f, message, both=False, end=None) :
         log_f.write(message + '\n')
 
 # 結果の取り出し
-def parse_result(res, output_blob, prob_threshold, frame, all_result) :
+def parse_result(res, parse_params) :
+    # tuple を個別の変数にバラす
+    output_blob, prob_threshold, frame, all_results = parse_params
+    
     # output tensorの取り出し
     res = res.get_tensor(output_blob).data[:]
 
@@ -197,23 +210,27 @@ def parse_result(res, output_blob, prob_threshold, frame, all_result) :
     for obj in res_array:
         conf = obj[2]                       # confidence for the predicted class(スコア)
         if conf > prob_threshold:           # 閾値より大きいものだけ処理
-            class_id = int(obj[1])  # クラスID
-            left     = obj[3]       # バウンディングボックスの左上のX座標
-            top      = obj[4]       # バウンディングボックスの左上のY座標
-            right    = obj[5]       # バウンディングボックスの右下のX座標
-            bottom   = obj[6]       # バウンディングボックスの右下のY座標
+            class_id = int(obj[1])                      # クラスID
+            left     = int(obj[3] * frame.img_width)    # バウンディングボックスの左上のX座標
+            top      = int(obj[4] * frame.img_height)   # バウンディングボックスの左上のY座標
+            right    = int(obj[5] * frame.img_width)    # バウンディングボックスの右下のX座標
+            bottom   = int(obj[6] * frame.img_height)   # バウンディングボックスの右下のY座標
             
-            pt1 = np.array([left,  top   ])
-            pt2 = np.array([right, bottom])
-            
+            pt1 = (left,  top   )
+            pt2 = (right, bottom)
             
             raw_results.append({"class_id":class_id, "conf":conf, "pt1":pt1, "pt2":pt2})
-    all_result[frame.frame_number] = raw_results
+    all_results[frame.frame_number] = {"frame": frame, "result":raw_results}
+    
+    inf_end = time.time()                               # 推論処理終了時刻          --------------------------------
+    frame.inf_time = inf_end - frame.inf_start          # 推論処理時間
     return
 # ================================================================================
 
 # 表示&入力フレームの作成 =======================================================
-def prepare_disp_and_input(cap, input_shape, frame_number) :
+def prepare_disp_and_input(cap, input_shape, frame_number, all_frames) :
+    preprocess_start = time.time()                          # 前処理開始時刻            --------------------------------
+    
     ret, img_frame = cap.read()    # フレームのキャプチャ
     if not ret :
         # キャプチャ失敗
@@ -225,8 +242,14 @@ def prepare_disp_and_input(cap, input_shape, frame_number) :
     in_frame = in_frame.reshape(input_shape)                            # HWC → BHWC   ※ 旧バージョンはBCHWだった
     
     # 表示用フレームの作成
-    disp_frame = DispFrame(img_frame, frame_number)
+    disp_frame = DispFrame(img_frame, frame_number, all_frames)
 
+    preprocess_end = time.time()                            # 前処理終了時刻            --------------------------------
+    
+    # 前処理時間を表示フレームに格納しておく
+    disp_frame.preprocess_time = preprocess_end - preprocess_start     # 前処理時間
+    
+    
     return ret, in_frame, disp_frame
 # ================================================================================
 
@@ -399,12 +422,15 @@ def main():
     if is_async_mode:
         # 非同期モード時は最初のフレームの推論を予約しておく
         feed_dict = {}
-        ret, feed_dict[img_input_blob_name], disp_frame[cur_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number)
+        ret, feed_dict[img_input_blob_name], disp_frame[cur_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number, all_frames)
         if not ret :
             print("failed to capture first frame.")
             sys.exit(1)
         if img_info_input_blob_name:
             feed_dict[img_info_input_blob_name] = np.array([[img_input_height, img_input_width, 1]])
+        
+        # 推論開始時刻を表示フレームに格納しておく
+        disp_frame[cur_request_id].inf_start = time.time()                                 # 推論処理開始時刻          --------------------------------
         
         # 推論予約 =============================================================================
         async_queue[cur_request_id].start_async(feed_dict)
@@ -412,58 +438,59 @@ def main():
         # フレーム番号更新
         infer_frame_number += 1
         
+    
     # フレーム測定用タイマ
     prev_time = time.time()
     
     # すべての結果
-    all_result = {}
+    all_results = {}
     
     while True:
         # 画像の前処理 =============================================================================
-        preprocess_start = time.time()                          # 前処理開始時刻            --------------------------------
-        
         # 現在のフレーム番号表示
         print(f'frame_number: {infer_frame_number:5d} / {all_frames}', end='\r')
         # 画像キャプチャと表示/入力用画像を作成
         # 非同期モード時は次のフレームとして
         feed_dict = {}
-        ret, feed_dict[img_input_blob_name], disp_frame[next_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number)
+        ret, feed_dict[img_input_blob_name], disp_frame[next_request_id] = prepare_disp_and_input(cap, img_input_blob_shape, infer_frame_number, all_frames)
         if not ret:
             # キャプチャ失敗
             break
         if img_info_input_blob_name:
             feed_dict[img_info_input_blob_name] = np.array([[img_input_height, img_input_width, 1]])
         
+        # 推論開始時刻を表示フレームに格納しておく
+        disp_frame[next_request_id].inf_start = time.time()                                 # 推論処理開始時刻          --------------------------------
+        
         # 推論予約 =============================================================================
-        async_queue[next_request_id].start_async(feed_dict)
+        parse_params = (output_blob, args.prob_threshold, disp_frame[next_request_id], all_results)
+        async_queue[next_request_id].start_async(feed_dict, parse_params)
         
         # フレーム番号更新
         infer_frame_number += 1
         
-        preprocess_end = time.time()                            # 前処理終了時刻            --------------------------------
-        preprocess_time = preprocess_end - preprocess_start     # 前処理時間
-        
-        inf_start = time.time()                                 # 推論処理開始時刻          --------------------------------
-        
         # 推論結果待ち =============================================================================
         if async_queue[cur_request_id].wait_for(-1) :           # -1: 永久待ち
-            inf_end = time.time()                               # 推論処理終了時刻          --------------------------------
-            inf_time = inf_end - inf_start                      # 推論処理時間
+            parse_params = (output_blob, args.prob_threshold, disp_frame[cur_request_id], all_results)
+            parse_result(async_queue[cur_request_id], parse_params)
+            frame_result = all_results.pop(disp_frame_number)       # 辞書から要素を取り出して削除
             
             # 検出結果の解析 =============================================================================
             parse_start = time.time()                           # 解析処理開始時刻          --------------------------------
             
             # 現在の表示フレーム
-            cur_frame = disp_frame[cur_request_id]
+            cur_frame = frame_result["frame"]
             
-            parse_result(async_queue[cur_request_id], output_blob, args.prob_threshold, cur_frame, all_result)
-            raw_results = all_result.pop(disp_frame_number)       # 辞書から要素を取り出して削除
+            # 処理時間
+            preprocess_time = cur_frame.preprocess_time
+            inf_time        = cur_frame.inf_time
             
-            for rst in raw_results :
+            for rst in frame_result["result"] :
                 # 結果を個別の変数にバラす
-                class_id   = rst["class_id"]
-                conf       = rst["conf"]
-                pt1, pt2 = cur_frame.convert_point(rst["pt1"], rst["pt2"])
+                class_id = rst["class_id"]
+                conf     = rst["conf"]
+                pt1      = rst["pt1"]
+                pt2      = rst["pt2"]
                 
                 # 検出結果の文字列化
                 # ラベルが定義されていればラベルを読み出し、なければclass ID
@@ -488,23 +515,7 @@ def main():
             # 結果の表示 =============================================================================
             render_start = time.time()                          # 表示処理開始時刻          --------------------------------
             # 測定データの表示
-            frame_number_message    = f'frame_number   : {disp_frame_number:5d} / {all_frames}'
-            if frame_time == 0 :
-                frame_time_message  =  'Frame time     : ---'
-            else :
-                frame_time_message  = f'Frame time     : {(frame_time * 1000):.3f} ms    {(1/frame_time):.2f} fps'  # ここは前のフレームの結果
-            render_time_message     = f'Rendering time : {(render_time * 1000):.3f} ms'                             # ここは前のフレームの結果
-            inf_time_message        = f'Inference time : {(inf_time * 1000):.3f} ms'
-            parsing_time_message    = f'parse time     : {(parse_time * 1000):.3f} ms'
-            async_mode_message      = f"Async mode is {' on' if is_async_mode else 'off'}. Processing request {cur_request_id}"
-            
-            # 結果の書き込み
-            cur_frame.status_puts(frame_number_message, 0)
-            cur_frame.status_puts(inf_time_message,     1)
-            cur_frame.status_puts(parsing_time_message, 2)
-            cur_frame.status_puts(render_time_message,  3)
-            cur_frame.status_puts(frame_time_message,   4)
-            cur_frame.status_puts(async_mode_message,   5)
+            cur_frame.disp_status(frame_time, inf_time, render_time, parse_time, is_async_mode)
             
             # 表示
             if not no_disp :
