@@ -42,7 +42,8 @@ USAGEは以下の通り。
 ```
 usage: ov_object_detection_ssd.py [-h] -m MODEL -i INPUT [--labels LABELS]
                                   [-d DEVICE] [-l CPU_EXTENSION]
-                                  [-pt PROB_THRESHOLD] [--sync] [--save SAVE]
+                                  [-pt PROB_THRESHOLD] [--sync]
+                                  [--queue_num QUEUE_NUM] [--save SAVE]
                                   [--time TIME] [--log LOG] [--no_disp]
 
 optional arguments:
@@ -54,7 +55,7 @@ Input Options:
                         Path to an .xml file with a trained model.
   -i INPUT, --input INPUT
                         Required.
-                        Path to a image/video file. 
+                        Path to a image/video file.
                         (Specify 'cam' to work with camera)
   --labels LABELS       Optional.
                         Labels mapping file
@@ -62,18 +63,16 @@ Input Options:
                         to '.labels'.
   -d DEVICE, --device DEVICE
                         Optional
-                        Specify the target device to infer on; 
+                        Specify the target device to infer on;
                         CPU, GPU, FPGA, HDDL or MYRIAD is acceptable.
-                        The demo will look for a suitable plugin 
+                        The demo will look for a suitable plugin
                         for device specified.
                         Default value is CPU
   -l CPU_EXTENSION, --cpu_extension CPU_EXTENSION
                         Optional.
-                        Required for CPU custom layers. 
+                        Required for CPU custom layers.
                         Absolute path to a shared library
                         with the kernels implementations.
-                        以前はlibcpu_extension_avx2.so 指定が必須だったけど、
-                        2020.1から不要になった
 
 Output Options:
   --save SAVE           Optional.
@@ -91,6 +90,9 @@ Execution Options:
                         Probability threshold for detections filtering
   --sync                Optional.
                         Start in sync mode
+  --queue_num QUEUE_NUM
+                        Optional.
+                        Number of async infer queues
 ```
 
 ## ``test.sh``

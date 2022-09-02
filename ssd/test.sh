@@ -13,8 +13,7 @@ COMMAND_NAME=$0
 MAIN_SCRIPT=ov_object_detection_ssd.py
 
 # プロジェクトベースディレクトリ
-BASE_DIR=$(realpath $(pwd)/..)				# 念のため絶対パスにしておく
-											# `～`だとネストできないので、$(～)で
+BASE_DIR=$(realpath ${PWD}/..)				# 念のため絶対パスにしておく
 
 # モデルデータのベースディレクトリ
 IR_BASE=${BASE_DIR}/convert_model_ssd/_IR
@@ -77,7 +76,7 @@ disp_list() {
 	for MODEL_NAME in ${MODEL_NAMES[@]}
 	do 
 		echo "${count} : ${MODEL_NAME}"
-		count=`expr ${count} + 1`
+		count=$(expr ${count} + 1)
 	done
 	echo ' '
 	exit
@@ -107,30 +106,36 @@ execute() {
 	model_name_ext=""
 	EXT_OPTION=""
 	if [[ "${device}" == "CPU" ]] ; then
+		EXT_OPTION+=" --device=${device}"
 		model_name_ext+="_cpu"
 	elif [[ "${device}" == "MYRIAD" ]] ; then
-			model_name_ext+="_ncs2"
+		EXT_OPTION+=" --device=${device}"
+		model_name_ext+="_ncs2"
 	fi
 	if [[ "${sync_flag}" == "yes" ]] ; then
 		EXT_OPTION+=" --sync"
 		model_name_ext+="_sync"
 	else
-		model_name_ext+="_async"
+		EXT_OPTION+=" --queue_num=${queue_num}"
+		model_name_ext+="_async_${queue_num}"
 	fi
 	if [[ "${disp_flag}" == "no" ]] ; then
 		EXT_OPTION+=" --no_disp"
 	else
 		model_name_ext+="_disp"
 	fi
+	
+	EXT_OPTION+=" --model=${MODEL_FILE} --label=${LABEL_FILE} --input=${INPUT_FILE}"
+	 
 	if [[ "${log_flag}" == "yes" ]] ; then
 		local SAVE_EXT=${INPUT_FILE##*.}    # 入力ファイルの拡張子
 		local LOG_NAME_BASE=${RESULT_DIR}/${MODEL_NAME}${model_name_ext}
 		local SAVE_NAME=${LOG_NAME_BASE}.${SAVE_EXT}
 		local TIME_FILE=${LOG_NAME_BASE}.time
 		local LOG_FILE=${LOG_NAME_BASE}.log
-		EXT_OPTION+=" --save ${SAVE_NAME} --time ${TIME_FILE} --log ${LOG_FILE}"
+		EXT_OPTION+=" --save=${SAVE_NAME} --time=${TIME_FILE} --log=${LOG_FILE}"
 	fi
-	command="python3 ${MAIN_SCRIPT} --device=${device} --input ${INPUT_FILE} --label ${LABEL_FILE} --model ${MODEL_FILE} ${EXT_OPTION}"
+	command="python3 ${MAIN_SCRIPT} ${EXT_OPTION}"
 	echo "COMMAND : ${command}"
 	eval ${command}
 	
@@ -139,7 +144,8 @@ execute() {
 		# echo "RET : ${MAIN_RET}"
 		if [ ${MAIN_RET} -eq 0 ]; then
 			# 実行時間の平均値を計算してファイルに出力
-			python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], index_col=0); ave=data.mean(); print(ave)" ${TIME_FILE} > ${TIME_FILE}.average
+			head --lines=2 ${TIME_FILE} > ${TIME_FILE}.average
+			python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], skiprows=2, skipinitialspace=True, index_col=0); ave=data.mean(); print(ave); print(f'FPS   {1000/ave[\"frame_time\"]}')" ${TIME_FILE} >> ${TIME_FILE}.average
 		fi
 	fi
 	
@@ -157,7 +163,7 @@ all_execute() {
 	if [[ "${sync_flag}" == "yes" ]] ; then
 		time_name_ext+="_sync"
 	else 
-		time_name_ext+="_async"
+		time_name_ext+="_async_${queue_num}"
 	fi
 	if [[ "${disp_flag}" == "yes" ]] ; then
 		time_name_ext+="_disp"
@@ -178,8 +184,8 @@ all_execute() {
 		echo "######## ${MODEL_NAME} ########" | tee -a ${TIME_LOG}
 		
 		# 実行開始時刻(秒で取得して日付で表示)
-		local start_time=`date +%s`
-		echo "***START*** : `date -d @${start_time} +'%Y/%m/%d %H:%M:%S'`" | tee -a ${TIME_LOG}
+		local start_time=$(date +%s)
+		echo "***START*** : $(date -d @${start_time} +'%Y/%m/%d %H:%M:%S')" | tee -a ${TIME_LOG}
 		
 		# if [[ ${MODEL_NAME} == "ssd_mobilenet_v1_fpn_coco" && ${devic} == "MYRIAD" ]];
 		# then
@@ -194,11 +200,11 @@ all_execute() {
 		# 後処理
 		if [ ${EXEC_RET} -eq 0 ]; then
 			# 実行終了時刻(秒で取得して日付で表示)
-			local end_time=`date +%s`
-			echo "*** END *** : `date -d @${end_time} +'%Y/%m/%d %H:%M:%S'`" | tee -a ${TIME_LOG}
+			local end_time=$(date +%s)
+			echo "*** END *** : $(date -d @${end_time} +'%Y/%m/%d %H:%M:%S')" | tee -a ${TIME_LOG}
 			# 実行時間(ちょっと姑息な方法で "秒数" を "時:分:秒" に変換)
 			local execution_time=$(expr ${end_time} - ${start_time})
-			echo "=== Execution time : `TZ=0 date -d@${execution_time} +%H:%M:%S`" | tee -a ${TIME_LOG}
+			echo "=== Execution time : $(TZ=0 date -d@${execution_time} +%H:%M:%S)" | tee -a ${TIME_LOG}
 		else
 			echo "***ERROR*** : ${MODEL_NAME} でエラーが発生しました " | tee -a ${TIME_LOG}
 		fi
@@ -221,9 +227,10 @@ device="CPU";				# デフォルトはCPU
 log_flag="no"
 disp_flag="yes"
 sync_flag="no"
+queue_num=2
 
 # オプション解析
-OPT=`getopt -o cnl -l cpu,ncs,log,no_disp,sync -- "$@"`
+OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,sync,queue4,queue6,queue8 -- "$@")
 if [ $? != 0 ] ; then
 	echo オプション解析エラー
 	exit 1
@@ -246,14 +253,27 @@ while true; do
 			log_flag="yes"					# no_disp時はログ有効
 			shift ;;
 		--sync)
+			queue_num=0
 			sync_flag="yes"
+			shift ;;
+		--queue4)
+			queue_num=4
+			sync_flag="no"
+			shift ;;
+		--queue6)
+			queue_num=6
+			sync_flag="no"
+			shift ;;
+		--queue8)
+			queue_num=8
+			sync_flag="no"
 			shift ;;
 		--)
 			# getoptのオプションと入力データを分けるための--が最後に検出されるので、ここで処理終了
 			shift; break ;;
 		*)
 			# 未定義オプション
-			echo "Internal error!" 1>&2
+			echo "undefined option!" 1>&2
 			exit 1 ;;
 	esac
 done
