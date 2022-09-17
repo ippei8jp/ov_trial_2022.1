@@ -134,8 +134,9 @@ dmypy.json
 
 .vscode/
 _trash/
-convert_model_ssd/public*/
-convert_model_ssd/_IR*/
-ssd/_result/
+convert_model_*/public*/
+convert_model_*/intel*/
+convert_model_*/_IR*/
+*/_result/
 images/*.mp4
 images/*.jpg
