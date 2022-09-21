@@ -22,54 +22,61 @@ from DispFrame import DispFrame, ImageSave, console_print
 # コマンドラインパーサの構築 =====================================================
 def build_argparser():
     parser = ArgumentParser(add_help=False, formatter_class=RawTextHelpFormatter)
-    input_args = parser.add_argument_group('Input Options')
-    output_args = parser.add_argument_group('Output Options')
-    exec_args = parser.add_argument_group('Execution Options')
     parser.add_argument('-h', '--help', action='help', default=SUPPRESS, 
                         help='Show this help message and exit.')
-    input_args.add_argument("-m", "--model", required=True, type=str, 
-                        help="Required.\n"
-                             "Path to an .xml file with a trained model.")
-    input_args.add_argument("-m_lm5", "--model_lm5", default=None, type=str, 
-                        help="Optional.\n"
-                             "Path to an .xml file for landmark detection (5point) model.")
-    input_args.add_argument("-m_lm35", "--model_lm35", default=None, type=str, 
-                        help="Optional.\n"
-                             "Path to an .xml file for landmark detection (35point) model.")
-    input_args.add_argument("-m_hp", "--model_hp", default=None, type=str, 
-                        help="Optional.\n"
-                             "Path to an .xml file for head pose estimation model.")
-    input_args.add_argument("-i", "--input", required=True, type=str, 
+    parser.add_argument("-i", "--input", required=True, type=str, 
                         help="Required.\n"
                              "Path to a image/video file. \n"
                              "(Specify 'cam' to work with camera)")
-    input_args.add_argument("-d", "--device", default="CPU", type=str, 
+    parser.add_argument("-l", "--cpu_extension", type=str, default=None, 
+                        help="Optional.\n"
+                             "Required for CPU custom layers. \n"
+                             "Absolute path to a shared library\n"
+                             "with the kernels implementations.")
+    
+    fase_args = parser.add_argument_group('face detect Options')
+    fase_args.add_argument("-m", "--model", required=True, type=str, 
+                        help="Required.\n"
+                             "Path to an .xml file with a trained model.")
+    fase_args.add_argument("-d", "--device", default="CPU", type=str, 
                         help="Optional\n"
                              "Specify the target device to infer on; \n"
                              "CPU, GPU, FPGA, HDDL or MYRIAD is acceptable.\n"
                              "The demo will look for a suitable plugin \n"
                              "for device specified.\n"
                              "Default value is CPU")
-    input_args.add_argument("-d_lm5", "--device_lm5", default="CPU", type=str, 
+    fase_args.add_argument("-t_detect", "--threshold_detect", default=0.5, type=float, 
+                        help="Optional.\n"
+                             "Probability threshold for detections filtering")
+    
+    lm5_args = parser.add_argument_group('landmark detect (5points) Options')
+    lm5_args.add_argument("-m_lm5", "--model_lm5", default=None, type=str, 
+                        help="Optional.\n"
+                             "Path to an .xml file for landmark detection (5points) model.")
+    lm5_args.add_argument("-d_lm5", "--device_lm5", default="CPU", type=str, 
                         help="Optional\n"
-                             "Specify the target device to infer for landmark detection (5point)\n"
+                             "Specify the target device to infer for landmark detection (5points)\n"
                              "Default value is CPU")
-    input_args.add_argument("-d_lm35", "--device_lm35", default="CPU", type=str, 
+    
+    lm35_args = parser.add_argument_group('landmark detect (35points) Options')
+    lm35_args.add_argument("-m_lm35", "--model_lm35", default=None, type=str, 
+                        help="Optional.\n"
+                             "Path to an .xml file for landmark detection (35point) model.")
+    lm35_args.add_argument("-d_lm35", "--device_lm35", default="CPU", type=str, 
                         help="Optional\n"
                              "Specify the target device to infer for landmark detection (35point)\n"
                              "Default value is CPU")
-    input_args.add_argument("-d_hp", "--device_hp", default="CPU", type=str, 
+    
+    hp_args = parser.add_argument_group('head pose estimation Options')
+    hp_args.add_argument("-m_hp", "--model_hp", default=None, type=str, 
+                        help="Optional.\n"
+                             "Path to an .xml file for head pose estimation model.")
+    hp_args.add_argument("-d_hp", "--device_hp", default="CPU", type=str, 
                         help="Optional\n"
                              "Specify the target device to infer for head pose estimation\n"
                              "Default value is CPU")
-    input_args.add_argument("-l", "--cpu_extension", type=str, default=None, 
-                        help="Optional.\n"
-                             "Required for CPU custom layers. \n"
-                             "Absolute path to a shared library\n"
-                             "with the kernels implementations.")
-    exec_args.add_argument("-pt", "--prob_threshold", default=0.5, type=float, 
-                        help="Optional.\n"
-                             "Probability threshold for detections filtering")
+    
+    output_args = parser.add_argument_group('Output Options')
     output_args.add_argument("--save", default=None, type=str, 
                         help="Optional.\n"
                              "Save result to specified file")
@@ -162,7 +169,7 @@ def main():
         wait_key_time = 0           # 永久待ち
     
     # モデルの作成
-    model_fd = model_face_detect(core, args.device, args.model, args.prob_threshold, 1.2, log_f)
+    model_fd = model_face_detect(core, args.device, args.model, args.threshold_detect, 1.2, log_f)
     
     model_lm5  = None
     model_lm35 = None

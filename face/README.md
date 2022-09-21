@@ -21,58 +21,66 @@
 USAGEは以下の通り。  
 
 ```
-usage: ov_face_detection.py [-h] -m MODEL [-m_lm5 MODEL_LM5]
-                            [-m_lm35 MODEL_LM35] [-m_hp MODEL_HP] -i INPUT
-                            [-d DEVICE] [-d_lm5 DEVICE_LM5]
-                            [-d_lm35 DEVICE_LM35] [-d_hp DEVICE_HP]
-                            [-l CPU_EXTENSION] [-pt PROB_THRESHOLD]
-                            [--save SAVE] [--time TIME] [--log LOG]
-                            [--no_disp]
+usage: ov_face_detection.py [-h] -i INPUT [-l CPU_EXTENSION] -m MODEL
+                            [-d DEVICE] [-t_detect THRESHOLD_DETECT]
+                            [-m_lm5 MODEL_LM5] [-d_lm5 DEVICE_LM5]
+                            [-m_lm35 MODEL_LM35] [-d_lm35 DEVICE_LM35]
+                            [-m_hp MODEL_HP] [-d_hp DEVICE_HP] [--save SAVE]
+                            [--time TIME] [--log LOG] [--no_disp]
 
 optional arguments:
   -h, --help            Show this help message and exit.
+  -i INPUT, --input INPUT
+                        Required.
+                        Path to a image/video file.
+                        (Specify 'cam' to work with camera)
+  -l CPU_EXTENSION, --cpu_extension CPU_EXTENSION
+                        Optional.
+                        Required for CPU custom layers.
+                        Absolute path to a shared library
+                        with the kernels implementations.
 
-Input Options:
+face detect Options:
   -m MODEL, --model MODEL
                         Required.
                         Path to an .xml file with a trained model.
+  -d DEVICE, --device DEVICE
+                        Optional
+                        Specify the target device to infer on;
+                        CPU, GPU, FPGA, HDDL or MYRIAD is acceptable.
+                        The demo will look for a suitable plugin
+                        for device specified.
+                        Default value is CPU
+  -t_detect THRESHOLD_DETECT, --threshold_detect THRESHOLD_DETECT
+                        Optional.
+                        Probability threshold for detections filtering
+
+landmark detect (5points) Options:
   -m_lm5 MODEL_LM5, --model_lm5 MODEL_LM5
                         Optional.
-                        Path to an .xml file for landmark detection (5point) model.
+                        Path to an .xml file for landmark detection (5points) model.
+  -d_lm5 DEVICE_LM5, --device_lm5 DEVICE_LM5
+                        Optional
+                        Specify the target device to infer for landmark detection (5points)
+                        Default value is CPU
+
+landmark detect (35points) Options:
   -m_lm35 MODEL_LM35, --model_lm35 MODEL_LM35
                         Optional.
                         Path to an .xml file for landmark detection (35point) model.
-  -m_hp MODEL_HP, --model_hp MODEL_HP
-                        Optional.
-                        Path to an .xml file for head pose estimation model.
-  -i INPUT, --input INPUT
-                        Required.
-                        Path to a image/video file. 
-                        (Specify 'cam' to work with camera)
-  -d DEVICE, --device DEVICE
-                        Optional
-                        Specify the target device to infer on; 
-                        CPU, GPU, FPGA, HDDL or MYRIAD is acceptable.
-                        The demo will look for a suitable plugin 
-                        for device specified.
-                        Default value is CPU
-  -d_lm5 DEVICE_LM5, --device_lm5 DEVICE_LM5
-                        Optional
-                        Specify the target device to infer for landmark detection (5point)
-                        Default value is CPU
   -d_lm35 DEVICE_LM35, --device_lm35 DEVICE_LM35
                         Optional
                         Specify the target device to infer for landmark detection (35point)
                         Default value is CPU
+
+head pose estimation Options:
+  -m_hp MODEL_HP, --model_hp MODEL_HP
+                        Optional.
+                        Path to an .xml file for head pose estimation model.
   -d_hp DEVICE_HP, --device_hp DEVICE_HP
                         Optional
                         Specify the target device to infer for head pose estimation
                         Default value is CPU
-  -l CPU_EXTENSION, --cpu_extension CPU_EXTENSION
-                        Optional.
-                        Required for CPU custom layers. 
-                        Absolute path to a shared library
-                        with the kernels implementations.
 
 Output Options:
   --save SAVE           Optional.
@@ -84,10 +92,6 @@ Output Options:
   --no_disp             Optional.
                         without image display
 
-Execution Options:
-  -pt PROB_THRESHOLD, --prob_threshold PROB_THRESHOLD
-                        Optional.
-                        Probability threshold for detections filtering
 ```
 
 ## ``test.sh``
