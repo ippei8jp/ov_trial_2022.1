@@ -30,20 +30,36 @@ class sync_model_base() :
         # 入力レイヤ数のチェックと名前の取得
         log.info("Check inputs")
         inputs = self.model.inputs
-        assert len(inputs) == 1, "Demo supports only single input topologies" # 入力レイヤ数は1のみ対応
-        self.input_blob_name = inputs[0].get_any_name()       # 入力レイヤ名
-        self.input_blob_shape = inputs[0].shape
-        assert len(self.input_blob_shape) == 4, "input shape error" # 入力レイヤ数は1のみ対応
         
-        if self.input_blob_shape[1] in range(1, 5) :
-            # CHW
-            self.input_blob_format_NCHW = True
-            self.img_input_n, self.img_input_colors, self.img_input_height, self.img_input_width = self.input_blob_shape
-        else :
-            # HWC
-            self.input_blob_format_NCHW = False
-            self.img_input_n, self.img_input_height, self.img_input_width, self.img_input_colors = self.input_blob_shape
+        self.img_input_blob_name  = None
+        self.img_info_blob_name_3 = None
+        self.img_info_blob_name_6 = None
+        for blob in inputs:
+            blob_name = blob.get_any_name()         # 名前
+            blob_shape = blob.shape                 # サイズ
+            print(f'{blob_name}   {blob_shape}')
+            if len(blob_shape) == 4:                # 4次元なら入力画像レイヤ
+                self.img_input_blob_name  = blob_name
+                self.img_input_blob_shape = blob_shape
+                if blob_shape[1] in range(1, 5) :
+                    # CHW
+                    self.img_input_blob_format_NCHW = True
+                    self.img_input_n, self.img_input_colors, self.img_input_height, self.img_input_width = blob_shape
+                else :
+                    # HWC
+                    self.img_input_blob_format_NCHW = False
+                    self.img_input_n, self.img_input_height, self.img_input_width, self.img_input_colors = blob_shape
+            elif len(blob_shape) == 2:              # 2次元なら入力画像情報レイヤ
+                if blob_shape[1] == 3 :             # 1x3のタイプ
+                   self.img_info_blob_name_3 = blob_name
+                elif blob_shape[1] == 6 :           # 1x6のタイプ
+                   self.img_info_blob_name_6 = blob_name
+            else:                                   # それ以外のレイヤが含まれていたらエラー
+                raise RuntimeError(f"Unsupported {len(blob_shape)} input layer '{blob_name}'. Only 2D and 4D input layers are supported.")
     
+        if self.img_input_blob_name is None :
+            raise RuntimeError("Image input blob not found.")
+        
     def is_ready(self) :
         return self.async_queue.is_ready()
     
@@ -59,11 +75,21 @@ class sync_model_base() :
     def pre_process(self, image) :
         # 入力用フレームの作成
         in_frame = cv2.resize(image, (self.img_input_width, self.img_input_height))     # リサイズ
-        if self.input_blob_format_NCHW :
+        if self.img_input_blob_format_NCHW :
              in_frame = in_frame.transpose((2, 0, 1))                                       # HWC → CHW
-        in_frame = in_frame.reshape(self.input_blob_shape)                                  # HWC → BHWC or CHW → BCHW
+        in_frame = in_frame.reshape(self.img_input_blob_shape)                              # HWC → BHWC or CHW → BCHW
         
-        feed_dict = {self.input_blob_name: in_frame}
+        feed_dict = {self.img_input_blob_name: in_frame}
+        if not self.img_info_blob_name_3 is None :      # 1x3のタイプ
+            feed_dict[self.img_info_blob_name_3] = np.array([[self.img_input_height, self.img_input_width, 1]])
+        if not self.img_info_blob_name_6 is None :      # 1x6のタイプ
+            feed_dict[self.img_info_blob_name_6] = np.array([[  self.img_input_height, 
+                                                                self.img_input_width, 
+                                                                self.img_input_width  / image.shape[1], 
+                                                                self.img_input_height / image.shape[0], 
+                                                                self.img_input_width  / image.shape[1], 
+                                                                self.img_input_height / image.shape[0]
+                                                            ]])
         
         return feed_dict
     # ================================================================================
