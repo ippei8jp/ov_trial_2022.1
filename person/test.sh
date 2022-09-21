@@ -18,9 +18,19 @@ BASE_DIR=$(realpath ${PWD}/..)				# 念のため絶対パスにしておく
 # モデルデータのベースディレクトリ
 IR_BASE="${BASE_DIR}/convert_model_person/_IR"
 
-# 入出力ファイル/ディレクトリ
-INPUT_DEFAULT_FILE="${BASE_DIR}/images/face-demographics-walking-and-pause.mp4"
+# 入力ファイル
+INPUT_FILE="${BASE_DIR}/images/face-demographics-walking-and-pause.mp4"
+
+# 結果出力ディレクトリ
 RESULT_DIR=./_result
+
+# オプション連動変数
+device="CPU";				# デフォルトはCPU
+log_flag="no"
+disp_flag="yes"
+allow_long_proc_flag="no"
+MODEL_REID_NO="OFF"
+MODEL_ATTR_NO="OFF"
 
 # 結果格納ディレクトリを作っておく
 mkdir -p ${RESULT_DIR}
@@ -32,6 +42,7 @@ mkdir -p ${RESULT_DIR}
 
 MODEL_NAMES=()   # 初期化
 MODEL_DIRS=()
+
 `#  0`;MODEL_NAMES+=('person-detection-0200')          # intel : 1, 3, 256, 256 : 1, 1, 200, 7 MobileNetV2 
        MODEL_DIRS+=('intel')
 `#  1`;MODEL_NAMES+=('person-detection-0201')          # intel : 1, 3, 384, 384 : 1, 1, 200, 7 MobileNetV2 
@@ -135,17 +146,8 @@ disp_list() {
 # シェル変数を設定するので、$(analyze_options $*) で子プロセスとして実行してはいけない
 # オプション解析後の残りのコマンドライン引数は変数 NEW_ARGV に格納される
 analyze_options() {
-	# オプション連動変数
-	device="CPU";				# デフォルトはCPU
-	log_flag="no"
-	disp_flag="yes"
-	allow_long_proc_flag="no"
-	INPUT_FILE=${INPUT_DEFAULT_FILE}
-	MODEL_REID_NO="OFF"
-	MODEL_ATTR_NO="OFF"
-	
 	# オプション解析
-	OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,reid:,attr:,reid_ncs:,attr_ncs:,allow_long_proc -- "$@")
+	OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,allow_long_proc,reid:,attr:,reid_ncs:,attr_ncs: -- "$@")
 	if [ $? != 0 ] ; then
 		echo オプション解析エラー
 		exit 1
@@ -169,6 +171,9 @@ analyze_options() {
 				disp_flag="no"
 				log_flag="yes"					# no_disp時はログ有効
 				shift ;;
+			--allow_long_proc)
+				allow_long_proc_flag="yes"
+				shift ;;
 			--reid)
 				MODEL_REID_NO=$2
 				DEVICE_ATTR="CPU"
@@ -185,9 +190,6 @@ analyze_options() {
 				MODEL_ATTR_NO=$2
 				DEVICE_ATTR="NCS"
 				shift 2;;						# パラメータの分もずらす
-			--allow_long_proc)
-				allow_long_proc_flag="yes"
-				shift ;;
 			--)
 				# getoptのオプションと入力データを分けるための--が最後に検出されるので、ここで処理終了
 				shift
