@@ -18,9 +18,20 @@ BASE_DIR=$(realpath ${PWD}/..)				# 念のため絶対パスにしておく
 # モデルデータのベースディレクトリ
 IR_BASE="${BASE_DIR}/convert_model_face/_IR"
 
-# 入出力ファイル/ディレクトリ
-INPUT_DEFAULT_FILE="${BASE_DIR}/images/face-demographics-walking-and-pause.mp4"
+# 入力ファイル
+INPUT_FILE="${BASE_DIR}/images/face-demographics-walking-and-pause.mp4"
+
+# 結果出力ディレクトリ
 RESULT_DIR=./_result
+
+# オプション連動変数
+device="CPU";				# デフォルトはCPU
+log_flag="no"
+disp_flag="yes"
+allow_long_proc_flag="no"
+lm5_flag="no"
+lm35_flag="no"
+hp_flag="no"
 
 # 結果格納ディレクトリを作っておく
 mkdir -p ${RESULT_DIR}
@@ -80,14 +91,15 @@ usage(){
 	echo '      -l | --log : 実行ログを保存(model_number指定時のみ有効'
 	echo '                       --no_disp指定時は指定の有無に関わらずログを保存'
 	echo '                       all/allall指定時は指定の有無に関わらずログを保存'
+	echo '    ---- option_other ----'
+	echo '      --allow_long_proc  : 実行時間の長いモデルの実行を許可'
 	echo '    input_file 省略時はデフォルトの入力ファイルを使用'
 	echo ' '
+	disp_list
 }
 
-# ======== USAGE 表示 =================================================
+# ======== LIST 表示 =================================================
 disp_list() {
-	# usage 表示
-	usage
 	echo '==== MODEL LIST ===='
 	count=0
 	for MODEL_NAME in ${MODEL_NAMES[@]}
@@ -96,32 +108,87 @@ disp_list() {
 		count=$(expr ${count} + 1)
 	done
 	echo ' '
+	
 	exit
 }
 
-# ======== モデルのパスを取得 =========================================
-get_model_path() {
-	local M_DIR=$1
-	local M_NAME=$2
-	echo "${IR_BASE}/${M_DIR}/${M_NAME}/FP16/${M_NAME}.xml"
+# ======== オプション解析 =================================================
+# シェル変数を設定するので、$(analyze_options $*) で子プロセスとして実行してはいけない
+# オプション解析後の残りのコマンドライン引数は変数 NEW_ARGV に格納される
+analyze_options() {
+	# オプション解析
+	OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,allow_long_proc,lm5,lm5_ncs,lm35,lm35_ncs,hp,hp_ncs -- "$@")
+	if [ $? != 0 ] ; then
+		echo オプション解析エラー
+		exit 1
+	fi
+	
+	# コマンドライン引数の書き換え
+	eval set -- "${OPT}"
+	
+	while true; do
+		case $1 in
+			-c | --cpu)
+				device="CPU"
+				shift ;;
+			-n | --ncs)
+				device="MYRIAD"
+				shift ;;
+			-l | --log)
+				log_flag="yes"
+				shift ;;
+			--no_disp)
+				disp_flag="no"
+				log_flag="yes"					# no_disp時はログ有効
+				shift ;;
+			--allow_long_proc)
+				allow_long_proc_flag="yes"
+				shift ;;
+			--lm5)
+				lm5_flag="CPU"
+				shift ;;
+			--lm5_ncs)
+				lm5_flag="NCS"
+				shift ;;
+			--lm35)
+				lm35_flag="CPU"
+				shift ;;
+			--lm35_ncs)
+				lm35_flag="NCS"
+				shift ;;
+			--hp)
+				hp_flag="CPU"
+				shift ;;
+			--hp_ncs)
+				hp_flag="NCS"
+				shift ;;
+			--)
+				# getoptのオプションと入力データを分けるための--が最後に検出されるので、ここで処理終了
+				shift; break ;;
+			*)
+				# 未定義オプション
+				echo "undefined option!" 1>&2
+				exit 1 ;;
+		esac
+	done
+	
+	# コマンドライン解析後のコマンドライン引数
+	NEW_ARGV=$*
 }
 
 # ======== コマンド本体実行 =================================================
 execute() {
+	# モデル名
+	local MODEL_NO=$1
+	local MODEL_NAME=${MODEL_NAMES[${MODEL_NO}]}
+	local MODEL_DIR=${MODEL_DIRS[${MODEL_NO}]}
+
 	# モデルファイル
 	local MODEL_FILE="$(get_model_path ${MODEL_DIR} ${MODEL_NAME})"
 
-	if [ ! -f ${MODEL_FILE} ]; then
-		# 指定されたモデルファイルが存在しない
-		echo "==== モデルファイル ${MODEL_FILE} は存在しません ===="
-		return 1
-	fi
-
-	echo "MODEL_FILE : ${MODEL_FILE}"
-
 	#追加オプション
-	log_name_ext=""
-	EXT_OPTION=""
+	local log_name_ext=""
+	local EXT_OPTION=""
 	if [[ "${device}" == "CPU" ]] ; then
 		EXT_OPTION+=" --device=${device}"
 		log_name_ext+="-cpu"
@@ -175,7 +242,7 @@ execute() {
 	# ログファイル関連設定
 	if [[ "${log_flag}" == "yes" ]] ; then
 		local SAVE_EXT=${INPUT_FILE##*.}    # 入力ファイルの拡張子
-		local LOG_NAME_BASE=${RESULT_DIR}/${MODEL_NAME}${log_name_ext}
+		local LOG_NAME_BASE=${RESULT_DIR}/${MODEL_NO}_${MODEL_NAME}${log_name_ext}
 		local SAVE_NAME=${LOG_NAME_BASE}.${SAVE_EXT}
 		local TIME_FILE=${LOG_NAME_BASE}.time
 		local LOG_FILE=${LOG_NAME_BASE}.log
@@ -184,35 +251,44 @@ execute() {
 		local LOG_FILE=/dev/stdout
 	fi
 
-	if [[ "${device}" == "MYRIAD" ]] && [[ "${MODEL_NAME}" == "face-detection-0205" ]] ; then
-		echo "Do not run this test because it contains layers not supported by NCS" > ${LOG_FILE}
-		MAIN_RET=39 # 実行スキップエラー
-	elif [[ "${device}" == "MYRIAD" ]] && [[ "${MODEL_NAME}" == "face-detection-0206" ]] ; then
-		echo "Do not run this test because it contains layers not supported by NCS" > ${LOG_FILE}
-		MAIN_RET=39 # 実行スキップエラー
-	else 
-		# コマンド実行
-		command="python3 ${MAIN_SCRIPT} ${EXT_OPTION}"
-		echo "COMMAND : ${command}"
-		eval ${command}
-		MAIN_RET=$?
-		if [[ "${log_flag}" == "yes" ]] ; then
-			# コマンド正常終了
-			# echo "RET : ${MAIN_RET}"
-			if [ ${MAIN_RET} -eq 0 ]; then
-				# 実行時間の平均値を計算してファイルに出力
-				head --lines=2 ${TIME_FILE} > ${TIME_FILE}.average
-				python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], skiprows=2, skipinitialspace=True, index_col=0); ave=data.mean(); print(ave); print(f'FPS   {1000/ave[\"frame_time\"]}')" ${TIME_FILE} >> ${TIME_FILE}.average
-			fi
+	# スキップしたい組み合わせがある場合はここでチェック
+	if [[ "${device}" == "MYRIAD" ]] ; then
+		if  [[ "${MODEL_NAME}" == "face-detection-0205" ]] || \
+			[[ "${MODEL_NAME}" == "face-detection-0206" ]] ; then
+			echo "Do not run this test because it contains layers not supported by NCS" > ${LOG_FILE}
+			local MAIN_RET=39 # 実行スキップエラー
+			return ${MAIN_RET}
+		fi
+	fi
+	if [[ "${allow_long_proc_flag}" != "yes" ]];then
+		if  [[ "${MODEL_NAME}" == "face-detection-0206" ]] ; then
+			echo "Do not run this test because it Requires a long time to execute." > ${LOG_FILE}
+			echo "Please specify the --allow_long_proc option to execute." >> ${LOG_FILE}
+			local MAIN_RET=39 # 実行スキップエラー
+			return ${MAIN_RET}
 		fi
 	fi
 
-	return $MAIN_RET
+	# コマンド実行
+	local command="python3 ${MAIN_SCRIPT} ${EXT_OPTION}"
+	echo "COMMAND : ${command}"
+	eval ${command}
+	local MAIN_RET=$?
+	if [[ "${log_flag}" == "yes" ]] ; then
+		# コマンド正常終了
+		# echo "RET : ${MAIN_RET}"
+		if [ ${MAIN_RET} -eq 0 ]; then
+			# 実行時間の平均値を計算してファイルに出力
+			head --lines=2 ${TIME_FILE} > ${TIME_FILE}.average
+			python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], skiprows=2, skipinitialspace=True, index_col=0); ave=data.mean(); print(ave); print(f'FPS   {1000/ave[\"frame_time\"]}')" ${TIME_FILE} >> ${TIME_FILE}.average
+		fi
+	fi
+	return ${MAIN_RET}
 }
 
 # ======== 自動実行処理 =================================================
 all_execute() {
-	time_name_ext=""
+	local time_name_ext=""
 	if [[ "${device}" == "CPU" ]] ; then
 		time_name_ext+="-cpu"
 	elif [[ "${device}" == "MYRIAD" ]] ; then
@@ -240,7 +316,8 @@ all_execute() {
 		time_name_ext+="-hp_ncs"
 	else
 		time_name_ext+="-hp_off"
-	fi
+	fi	
+	
 	if [[ "${disp_flag}" == "yes" ]] ; then
 		time_name_ext+="-disp"
 	fi
@@ -250,21 +327,19 @@ all_execute() {
 	echo "各モデルの実行時間" > ${TIME_LOG}
 	
 	# 各モデルに対する処理ループ
-	# for MODEL_NAME in ${MODEL_NAMES[@]}
-	# do 
 	for ix in ${!MODEL_NAMES[@]}; do
-		MODEL_NAME=${MODEL_NAMES[ix]}
-        MODEL_DIR=${MODEL_DIRS[ix]}
+		local MODEL_NO=${ix}
+		local MODEL_NAME=${MODEL_NAMES[${MODEL_NO}]}
 
 		# 前処理
-		echo "######## ${MODEL_NAME} ########" | tee -a ${TIME_LOG}
+		echo "######## ${MODEL_NO} ${MODEL_NAME} ########" | tee -a ${TIME_LOG}
 		
 		# 実行開始時刻(秒で取得して日付で表示)
 		local start_time=$(date +%s)
 		echo "***START*** : $(date -d @${start_time} +'%Y/%m/%d %H:%M:%S')" | tee -a ${TIME_LOG}
 		
 		# 処理本体
-		execute
+		execute ${MODEL_NO}
 		local EXEC_RET=$?		# 処理本体の戻り値
 		
 		# 後処理
@@ -290,82 +365,58 @@ allall_execute() {
 	done
 }
 
-# #################################################################################
-# オプション連動変数
-device="CPU";				# デフォルトはCPU
-log_flag="no"
-disp_flag="yes"
-lm5_flag="no"
-lm35_flag="no"
-hp_flag="no"
+# ======== 数値パラメータのチェック =========================================
+# $(check_numerical_parameter $MODEL_NO $num_models) で子プロセスとして実行し、
+# 戻り値が0ならOK、それ以外ならNG
+check_numerical_parameter() {
+	local MODEL_NO=$1
+	local num_models=$2
+
+	# echo "${MODEL_NO}  ${num_models}"
+	
+	# パラメータが数値か確認
+	expr "${MODEL_NO}" + 1 >/dev/null 2>&1
+	if [ $? -ge 2 ] ; then
+		# echo "${MODEL_NO}"
+		echo " 0 以上 ${num_models} 未満の数値を指定してください(1)"
+		return 1
+	fi
+	# パラメータが 正数 かつ 配列数未満 か確認
+	if [ ${MODEL_NO} -ge 0 ] && [ ${MODEL_NO} -lt ${num_models} ] ; then
+		return 0
+	fi
+	echo " 0 以上 ${num_models} 未満の数値を指定してください(2)"
+	return 1
+}
+
+# ======== モデルのパスを取得 =========================================
+# $(get_model_path $DIR $NAME) で子プロセスとして実行し、戻り値で結果を取得
+get_model_path() {
+	local M_DIR=$1
+	local M_NAME=$2
+	echo "${IR_BASE}/${M_DIR}/${M_NAME}/FP16/${M_NAME}.xml"
+}
 
 
+# ======== メイン処理 =========================================
 # オプション解析
-OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,lm5,lm5_ncs,lm35,lm35_ncs,hp,hp_ncs -- "$@")
-if [ $? != 0 ] ; then
-	echo オプション解析エラー
-	exit 1
-fi
-eval set -- "$OPT"
+analyze_options $*
 
-while true; do
-	case $1 in
-		-c | --cpu)
-			device="CPU";
-			shift ;;
-		-n | --ncs)
-			device="MYRIAD"
-			shift ;;
-		-l | --log)
-			log_flag="yes"
-			shift ;;
-		--no_disp)
-			disp_flag="no"
-			log_flag="yes"					# no_disp時はログ有効
-			shift ;;
-		--lm5)
-			lm5_flag="CPU"
-			shift ;;
-		--lm5_ncs)
-			lm5_flag="NCS"
-			shift ;;
-		--lm35)
-			lm35_flag="CPU"
-			shift ;;
-		--lm35_ncs)
-			lm35_flag="NCS"
-			shift ;;
-		--hp)
-			hp_flag="CPU"
-			shift ;;
-		--hp_ncs)
-			hp_flag="NCS"
-			shift ;;
-		--)
-			# getoptのオプションと入力データを分けるための--が最後に検出されるので、ここで処理終了
-			shift; break ;;
-		*)
-			# 未定義オプション
-			echo "undefined option!" 1>&2
-			exit 1 ;;
-	esac
-done
-# #################################################################################
+# コマンドライン引数の書き換え
+eval set -- "${NEW_ARGV}"
 
-# ここに来た時点でオプションのパラメータは削除されている
+# ここに来た時点でオプションのコマンドライン引数は削除されている
 
 # 引数の個数
 num_args=$#
 if [ ${num_args} -eq 0 ] ;then
-	disp_list			# リスト表示
+	usage			# USAGE表示
 	exit
 fi
 
 if [ ${num_args} -ge 2 ] ;then
 	# 第2パラメータがあったら入力ファイルを変更
 	INPUT_FILE=$2
-else
-	INPUT_FILE=${INPUT_DEFAULT_FILE}
 fi
 
 if [[ "$1" == "list" ]] ;then
@@ -385,35 +436,15 @@ else
 	MODEL_NO=$1			# モデル番号
 fi
 
-num_models=${#MODEL_NAMES[@]}
-
 # パラメータが数値か確認
-expr "${MODEL_NO}" + 1 >/dev/null 2>&1
-if [ $? -ge 2 ]
-then
-  echo "${MODEL_NO}"
-  echo " 0 以上 $num_models 未満の数値を指定してください(1)"
-  usage
-  exit
+check_numerical_parameter ${MODEL_NO} ${#MODEL_NAMES[@]}
+if [ $? -ne 0 ] ; then
+	echo "1st param check error"
+	usage
+	exit
 fi
-# パラメータが正数か確認
-if [ ${MODEL_NO} -lt 0 ] ; then
-  echo " 0 以上 $num_models 未満の数値を指定してください(3)"
-  usage
-  exit
-fi
-# パラメータが配列数未満か確認
-if [ ${MODEL_NO} -ge ${num_models} ] ; then
-  echo " 0 以上 $num_models 未満の数値を指定してください(2)"
-  usage
-  exit
-fi
-
-# モデル名
-MODEL_NAME=${MODEL_NAMES[${MODEL_NO}]}
-MODEL_DIR=${MODEL_DIRS[${MODEL_NO}]}
 
 # 実行
-execute
+execute ${MODEL_NO}
 
 exit
