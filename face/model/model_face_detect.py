@@ -121,14 +121,14 @@ class model_face_detect(sync_model_base) :
         console_print(self.log_f, f'{disp_frame.frame_number:3}: Confidence={conf:4f} Location=({pt1[0]},{pt1[1]})-({pt2[0]},{pt2[1]})', False)
         
         # 検出枠の描画
-        disp_frame.draw_box(None, pt1, pt2)
+        disp_frame.draw_box(pt1, pt2)
         
         """
         # 拡張した検出枠の描画
         pt1_ex   = result["pt1_ex"]
         pt2_ex   = result["pt2_ex"]
         
-        disp_frame.draw_box(None, pt1_ex, pt2_ex, (128, 255, 255))
+        disp_frame.draw_box(pt1_ex, pt2_ex, (128, 255, 255))
         """
     # ================================================================================
     

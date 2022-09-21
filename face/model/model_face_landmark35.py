@@ -62,7 +62,7 @@ class model_face_landmark35(sync_model_base) :
             # 特徴点の描画
             point_img = (point * size_ex + pt1_ex).astype(int)  # 画像の座標に変換
             console_print(self.log_f, f'P{i}=({point_img[0]:3d}, {point_img[1]:3d}) ', end='')
-            cur_frame.draw_point(point_img, color=(0, 0, 255), str=str(i))
+            cur_frame.draw_point(point_img, color=(0, 0, 255), text=str(i))
         console_print(self.log_f, '', end='\n')
 
     # ================================================================================

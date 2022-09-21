@@ -26,6 +26,95 @@ class COLORS() :
     light_cyan    = ( 255, 255, 128)  # 水色
     light_yellow  = ( 128, 255, 255)  # 黄
 
+# ==== ビットマップ表示関連 ====================================================
+class DispBitmap() :
+    bitmap_patterns = {
+        "heart" :   {
+                "pattern" : 
+                    np.where(np.array([
+                            [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, ],
+                            [ 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, ],
+                            [ 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, ],
+                            [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ],
+                            [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ],
+                            [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ],
+                            [ 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, ],
+                            [ 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, ],
+                            [ 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, ],
+                            [ 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]
+                        ], dtype=np.uint8) != 0, True, False),      # 1の位置をTrueに置き換え
+                 "color" : COLORS.red, 
+             },
+        "spade" :   {
+                "pattern" : 
+                    np.where(np.array([
+                            [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, ],
+                            [ 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, ],
+                            [ 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, ],
+                            [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ],
+                            [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ],
+                            [ 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, ],
+                            [ 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, ],
+                            [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ]
+                        ], dtype=np.uint8) != 0, True, False),
+                "color" : COLORS.blue, 
+            }
+     }
+    
+    @classmethod
+    def disp_mark_bmp(cls, image, x, y, mark, color=None) :
+        # 指定されたパターン情報
+        bitmap_pattern = cls.bitmap_patterns.get(mark)
+        if bitmap_pattern is None:
+            # パターンがない
+            return
+        
+        # パターンと色の取得
+        ptn = bitmap_pattern["pattern"]
+        if color is None :
+            color = bitmap_pattern["color"]
+        
+        # 描画
+        """
+        for i in range(len(ptn)) :
+            if (y + i) < 0 or (y + i) >= image.shape[0]:
+                # 表示範囲外
+                continue
+            for j  in range(len(ptn[0])) :
+                if (x + j) < 0 or (x + j) >= image.shape[1]:
+                    # 表示範囲外
+                    continue
+                if ptn[i][j] :
+                    image[y+i][x+j] = color
+        """
+        # ビットマップを描画
+        if x < 0  :     # 範囲外補正
+            x = 0
+        if x > image.shape[1] - len(ptn[0]):
+            x = image.shape[1] - len(ptn[0])
+        if y < 0  :
+            y = 0
+        if y > image.shape[0] - len(ptn):
+            y = image.shape[0] - len(ptn)
+        
+        clip_img = image[y : y + len(ptn), x : x + len(ptn[0])]     # 描画領域を取り出す
+        clip_img[ptn] = color                                       # Trueの位置をcolorで置換(塗りつぶし)
+        image[y : y + len(ptn), x : x + len(ptn[0])] = clip_img     # 変更した描画領域を戻す
+        
 # 表示フレームクラス ==================================================================
 class DispFrame() :
     # カラーパレット(8bitマシン風。ちょっと薄目)
@@ -39,6 +128,8 @@ class DispFrame() :
                     COLORS.light_yellow,    # 6 (黄)
                     COLORS.white            # 7 (白)
                 ]
+    def get_IndexedColor(self, color_index) :
+        return self.COLOR_PALETTE[color_index % len(self.COLOR_PALETTE)]
     
     # ステータス領域サイズ
     STATUS_LINE_HIGHT   = 15                            # ステータス行の1行あたりの高さ
@@ -96,23 +187,52 @@ class DispFrame() :
         cv2.resizeWindow(window_name, image_v.shape[1], image_v.shape[0])
     
     # 検出枠の描画
-    def draw_box(self, str, pt1, pt2, color=COLORS.cyan) :
+    def draw_box(self, pt1, pt2, color=None, text=None, mark=None) :
+        # 各点
         left,  top    = pt1
         right, bottom = pt2
         
-        # 対象物の枠とラベルの描画
+        # デフォルトの色
+        if color is None :
+            color=COLORS.cyan
+        
+        # 対象物の枠の描画
         cv2.rectangle(self.image,    (left, top     ), (right,      bottom), color,  2)
-        if str :
-            cv2.rectangle(self.image,    (left, top + 20), (left + 160, top   ), color, -1)
-            cv2.putText(self.image, str, (left, top + 15), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 0))
+        if text :
+            # ラベルの描画
+            # 文字列表示パラメータ
+            fontface = cv2.FONT_HERSHEY_COMPLEX # フォントの種類
+            fontscale = 0.5                     # 文字のスケール
+            thickness = 1                       # 文字の太さ
+
+            # 文字列を描画した際の矩形の大きさを取得する。
+            (w, h), baseline = cv2.getTextSize(text, fontface, fontscale, thickness)
+            
+            # 描画位置
+            x = left
+            y = top if top >= h else h          # 画面からはみ出ないように調整
+            
+            # 文字を囲む矩形を描画する。
+            cv2.rectangle(self.image, (x, y - h), (x + w, y + baseline), color, thickness=-1)
+            
+            # 文字列を描画する
+            cv2.putText(self.image, text, (x, y), fontface, fontscale, (0, 0, 0), thickness)
+        
+        if mark :
+            # マークの描画
+            DispBitmap.disp_mark_bmp(self.image, right - 20, top, mark)         # 右上の少し左に表示
         
         return
     
     # 特徴点の描画
-    def draw_point(self, pt1,  color=COLORS.yellow, str=None) :
+    def draw_point(self, pt1,  color=None, text=None) :
+        # デフォルトの色
+        if color is None :
+            color=COLORS.yellow
+        
         cv2.circle(self.image, pt1, 2, color, 2)
-        if str :
-            cv2.putText(self.image, str, pt1, cv2.FONT_HERSHEY_COMPLEX, 0.5, color)
+        if text :
+            cv2.putText(self.image, text, pt1, cv2.FONT_HERSHEY_COMPLEX, 0.5, color)
         
         return
     
@@ -182,6 +302,8 @@ class DispFrame() :
         cv2.line(       self.image, center_pt, y_pt, COLORS.green, 2)
         cv2.arrowedLine(self.image, center_pt, z_pt, COLORS.blue,  2, tipLength=0.3)
     
+    
+    # ==== ステータス表示関連 ====================================================
     # ステータス表示行座標
     def STATUS_LINE_Y(self, line) : 
         return self.STATUS_LINE_HIGHT * (line + 1)
@@ -212,7 +334,7 @@ class DispFrame() :
         self.status_puts(3, infer_time_message)
         self.status_puts(4, postprocess_time_message)
 
-    # 処理時間関連処理
+    # ==== 処理時間関連処理 ====================================================
     def set_frame_time(self, frame_time) :
         self.frame_time = frame_time * 1000     # msec単位に変換
     
