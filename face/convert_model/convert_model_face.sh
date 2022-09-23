@@ -28,18 +28,22 @@ model_names+=('head-pose-estimation-adas-0001')
 
 for ix in ${!model_names[@]}; do
 	modelname=${model_names[ix]}
-	omz_downloader \
-	    --name ${modelname}
-	
-	omz_converter \
-	    --precisions FP16 \
-	    --name ${modelname} \
-	    --output_dir ${IR_BASE_DIR}
+	if [ -d ${IR_BASE_DIR}/*/${modelname} ] ; then 
+		echo "${modelname} already downloaded."
+	else
+		omz_downloader \
+		    --name ${modelname}
+		
+		omz_converter \
+		    --precisions FP16 \
+		    --name ${modelname} \
+		    --output_dir ${IR_BASE_DIR}
+	fi
 done
 
 # intelディレクトリはconvertしないのでシンボリックリンクで位置合わせ
 if [ -d intel ] ; then
-	$(cd ${IR_BASE_DIR}; ln -s ../intel .)
+	ln -sfr ./intel ${IR_BASE_DIR}
 fi
 
 

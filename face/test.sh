@@ -12,14 +12,14 @@ COMMAND_NAME=$0
 # 処理本体のファイル名
 MAIN_SCRIPT=ov_face_detection.py
 
-# プロジェクトベースディレクトリ
-BASE_DIR=$(realpath ${PWD}/..)				# 念のため絶対パスにしておく
-
 # モデルデータのベースディレクトリ
-IR_BASE="${BASE_DIR}/convert_model_face/_IR"
+IR_BASE="${PWD}/convert_model/_IR"
+
+# 画像ファイル格納ディレクトリ
+IMAGE_DIR=$(realpath ${PWD}/../images)		# 念のため絶対パスにしておく
 
 # 入力ファイル
-INPUT_FILE="${BASE_DIR}/images/face-demographics-walking-and-pause.mp4"
+INPUT_FILE="${IMAGE_DIR}/face-demographics-walking-and-pause.mp4"
 
 # 結果出力ディレクトリ
 RESULT_DIR=./_result
@@ -32,6 +32,7 @@ allow_long_proc_flag="no"
 lm5_flag="no"
 lm35_flag="no"
 hp_flag="no"
+cmd_check="no"
 
 # 結果格納ディレクトリを作っておく
 mkdir -p ${RESULT_DIR}
@@ -93,6 +94,7 @@ usage(){
 	echo '                       all/allall指定時は指定の有無に関わらずログを保存'
 	echo '    ---- option_other ----'
 	echo '      --allow_long_proc  : 実行時間の長いモデルの実行を許可'
+	echo '      --check            : 実行コマンドのチェックのみ行う'
 	echo '    input_file 省略時はデフォルトの入力ファイルを使用'
 	echo ' '
 	disp_list
@@ -117,7 +119,7 @@ disp_list() {
 # オプション解析後の残りのコマンドライン引数は変数 NEW_ARGV に格納される
 analyze_options() {
 	# オプション解析
-	OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,allow_long_proc,lm5,lm5_ncs,lm35,lm35_ncs,hp,hp_ncs -- "$@")
+	OPT=$(getopt -o cnl -l cpu,ncs,log,no_disp,allow_long_proc,lm5,lm5_ncs,lm35,lm35_ncs,hp,hp_ncs,check -- "$@")
 	if [ $? != 0 ] ; then
 		echo オプション解析エラー
 		exit 1
@@ -143,6 +145,9 @@ analyze_options() {
 				shift ;;
 			--allow_long_proc)
 				allow_long_proc_flag="yes"
+				shift ;;
+			--check)
+				cmd_check="yes"
 				shift ;;
 			--lm5)
 				lm5_flag="CPU"
@@ -272,15 +277,21 @@ execute() {
 	# コマンド実行
 	local command="python3 ${MAIN_SCRIPT} ${EXT_OPTION}"
 	echo "COMMAND : ${command}"
-	eval ${command}
-	local MAIN_RET=$?
-	if [[ "${log_flag}" == "yes" ]] ; then
-		# コマンド正常終了
-		# echo "RET : ${MAIN_RET}"
-		if [ ${MAIN_RET} -eq 0 ]; then
-			# 実行時間の平均値を計算してファイルに出力
-			head --lines=2 ${TIME_FILE} > ${TIME_FILE}.average
-			python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], skiprows=2, skipinitialspace=True, index_col=0); ave=data.mean(); print(ave); print(f'FPS   {1000/ave[\"frame_time\"]}')" ${TIME_FILE} >> ${TIME_FILE}.average
+	if [[ ${cmd_check} == "yes" ]] ; then
+		# 実行せずに終了
+		local MAIN_RET=0
+		return ${MAIN_RET}
+	else 
+		eval ${command}
+		local MAIN_RET=$?
+		if [[ "${log_flag}" == "yes" ]] ; then
+			# コマンド正常終了
+			# echo "RET : ${MAIN_RET}"
+			if [ ${MAIN_RET} -eq 0 ]; then
+				# 実行時間の平均値を計算してファイルに出力
+				head --lines=2 ${TIME_FILE} > ${TIME_FILE}.average
+				python3 -c "import sys; import pandas as pd; data = pd.read_csv(sys.argv[1], skiprows=2, skipinitialspace=True, index_col=0); ave=data.mean(); print(ave); print(f'FPS   {1000/ave[\"frame_time\"]}')" ${TIME_FILE} >> ${TIME_FILE}.average
+			fi
 		fi
 	fi
 	return ${MAIN_RET}
