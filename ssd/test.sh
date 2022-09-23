@@ -12,14 +12,14 @@ COMMAND_NAME=$0
 # 処理本体のファイル名
 MAIN_SCRIPT=ov_object_detection_ssd.py
 
-# プロジェクトベースディレクトリ
-BASE_DIR=$(realpath ${PWD}/..)				# 念のため絶対パスにしておく
-
 # モデルデータのベースディレクトリ
 IR_BASE="${PWD}/convert_model/_IR"
 
+# 画像ファイル格納ディレクトリ
+IMAGE_DIR=$(realpath ${PWD}/../images)		# 念のため絶対パスにしておく
+
 # 入力ファイル
-INPUT_FILE="${BASE_DIR}/images/testvideo3.mp4"
+INPUT_FILE="${IMAGE_DIR}/testvideo3.mp4"
 
 # 結果出力ディレクトリ
 RESULT_DIR=./_result
