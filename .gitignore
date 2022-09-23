@@ -137,6 +137,9 @@ _trash/
 convert_model_*/public*/
 convert_model_*/intel*/
 convert_model_*/_IR*/
+*/convert_model*/public*/
+*/convert_model*/intel*/
+*/convert_model*/_IR*/
 */_result/
 images/*.mp4
 images/*.jpg
