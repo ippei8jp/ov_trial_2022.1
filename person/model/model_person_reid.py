@@ -19,7 +19,7 @@ from DispFrame import console_print
 class model_person_reid(sync_model_base) :
     def __init__(self, core, model_xml, device="CPU", threshold=0.8, log_f=None) :
         # 親クラスの初期化をcall
-        super().__init__(core, model_xml, device, threshold, log_f)
+        super().__init__(core, model_xml, device=device, threshold=threshold, log_f=log_f)
         
         # reidベクトルの配列
         self.ReIdVectors = []

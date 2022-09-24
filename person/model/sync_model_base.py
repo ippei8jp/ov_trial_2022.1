@@ -12,7 +12,7 @@ import numpy as np
 from openvino.runtime import AsyncInferQueue    as ov_AsyncInferQueue
 
 class sync_model_base() :
-    def __init__(self, core, model_xml, device, threshold, log_f) :
+    def __init__(self, core, model_xml, device="CPU", threshold=0.5, log_f=None) :
         self.threshold      = threshold
         self.log_f          = log_f
 

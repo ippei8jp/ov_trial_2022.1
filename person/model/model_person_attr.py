@@ -41,7 +41,7 @@ class model_person_attr(sync_model_base) :
 
     def __init__(self, core, model_xml, device="CPU", threshold=0.5, log_f=None) :
         # 親クラスの初期化をcall
-        super().__init__(core, model_xml, device, threshold, log_f)
+        super().__init__(core, model_xml, device=device, threshold=threshold, log_f=log_f)
         
     # output blobの確認 ===============================================
     def check_output_blob(self) :
