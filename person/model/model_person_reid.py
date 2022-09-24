@@ -17,16 +17,15 @@ from DispFrame import console_print
 
 # Person reidentification (人物同定) model
 class model_person_reid(sync_model_base) :
-    def __init__(self, core, device, model_xml, threshold, log_f) :
-        self.log_f       = log_f
-        self.threshold = threshold
+    def __init__(self, core, model_xml, device="CPU", threshold=0.8, log_f=None) :
+        # 親クラスの初期化をcall
+        super().__init__(core, model_xml, device, threshold, log_f)
         
         # reidベクトルの配列
         self.ReIdVectors = []
-        
-        # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
-        self.load_model(core, model_xml)
-        
+    
+    # output blobの確認 ===============================================
+    def check_output_blob(self) :
         # 出力レイヤ数のチェックと名前の取得
         log.info("Check outputs")
         outputs = self.model.outputs
@@ -34,13 +33,6 @@ class model_person_reid(sync_model_base) :
         self.output_blob_name = outputs[0].get_any_name()       # 出力レイヤ名
         self.output_blob_shape = outputs[0].shape
         assert tuple(self.output_blob_shape) == (1, 256), f"output shape must be (1, 256), but it is {self.output_blob_shape}" # 出力レイヤのshape確認
-        
-        # 入力レイヤ数のチェックと名前の取得
-        self.check_input_blob()
-        
-        # モデルのコンパイル&推論キュー作成
-        self.make_infer_queue(core, device)
-        
     
     # 結果の解析 ===============================================
     def analyze_result(self, res, params) :

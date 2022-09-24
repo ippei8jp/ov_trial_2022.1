@@ -166,16 +166,16 @@ def main():
         wait_key_time = 0           # 永久待ち
     
     # モデルの作成
-    model_fd = model_person_detect(core, args.device, args.model, args.threshold_detect, 1.2, log_f)
+    model_fd = model_person_detect(core, args.model, device=args.device, threshold=args.threshold_detect, clip_ratio=1.2, log_f=log_f)
     
     model_reid = None
     model_attr = None
     
     if args.model_reid :
-        model_reid = model_person_reid(core, args.device_reid, args.model_reid, args.threshold_reid, log_f)
+        model_reid = model_person_reid(core, args.model_reid, device=args.device_reid, threshold=args.threshold_reid, log_f=log_f)
     
     if args.model_attr :
-        model_attr = model_person_attr(core, args.device_attr, args.model_attr, args.threshold_attr, log_f)
+        model_attr = model_person_attr(core, args.model_attr, device=args.device_attr, threshold=args.threshold_attr, log_f=log_f)
     
     # 推論開始
     log.info("Starting inference...")

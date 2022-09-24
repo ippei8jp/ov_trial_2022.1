@@ -12,6 +12,22 @@ import numpy as np
 from openvino.runtime import AsyncInferQueue    as ov_AsyncInferQueue
 
 class sync_model_base() :
+    def __init__(self, core, model_xml, device, threshold, log_f) :
+        self.threshold      = threshold
+        self.log_f          = log_f
+
+        # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
+        self.load_model(core, model_xml)
+        
+        # 入力レイヤ数のチェックと名前の取得
+        self.check_input_blob()
+        
+        # 出力レイヤ数のチェックと名前の取得
+        self.check_output_blob()
+        
+        # モデルのコンパイル&推論キュー作成
+        self.make_infer_queue(core, device)
+    
     def load_model(self, core, model_xml) :
         # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
         log.info(f"Loading model file: {model_xml}")
