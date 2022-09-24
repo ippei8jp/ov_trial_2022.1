@@ -34,20 +34,23 @@ def build_argparser():
                              "Absolute path to a shared library\n"
                              "with the kernels implementations.")
     
-    fase_args = parser.add_argument_group('face detect Options')
-    fase_args.add_argument("-m", "--model", required=True, type=str, 
+    face_args = parser.add_argument_group('face detect Options')
+    face_args.add_argument("-m", "--model", required=True, type=str, 
                         help="Required.\n"
                              "Path to an .xml file with a trained model.")
-    fase_args.add_argument("-d", "--device", default="CPU", type=str, 
+    face_args.add_argument("-d", "--device", default="CPU", type=str, 
                         help="Optional\n"
                              "Specify the target device to infer on; \n"
                              "CPU, GPU, FPGA, HDDL or MYRIAD is acceptable.\n"
                              "The demo will look for a suitable plugin \n"
                              "for device specified.\n"
                              "Default value is CPU")
-    fase_args.add_argument("-t_detect", "--threshold_detect", default=0.5, type=float, 
+    face_args.add_argument("-t_detect", "--threshold_detect", default=0.5, type=float, 
                         help="Optional.\n"
                              "Probability threshold for detections filtering")
+    face_args.add_argument("--clip_ratio", default=1.2, type=float, 
+                        help="Optional.\n"
+                             "Clip ratio for additional detection")
     
     lm5_args = parser.add_argument_group('landmark detect (5points) Options')
     lm5_args.add_argument("-m_lm5", "--model_lm5", default=None, type=str, 
@@ -169,20 +172,20 @@ def main():
         wait_key_time = 0           # 永久待ち
     
     # モデルの作成
-    model_fd = model_face_detect(core, args.device, args.model, args.threshold_detect, 1.2, log_f)
+    model_fd = model_face_detect(core, args.model, device=args.device, threshold=args.threshold_detect, clip_ratio=args.clip_ratio, log_f=log_f)
     
     model_lm5  = None
     model_lm35 = None
     model_hp   = None
     
     if args.model_lm5 :
-        model_lm5 = model_face_landmark5(core, args.device_lm5, args.model_lm5, log_f)
+        model_lm5 = model_face_landmark5(core, args.model_lm5, device=args.device_lm5, log_f=log_f)
         
     if args.model_lm35 :
-        model_lm35 = model_face_landmark35(core, args.device_lm35, args.model_lm35, log_f)
+        model_lm35 = model_face_landmark35(core, args.model_lm35, device=args.device_lm35, log_f=log_f)
     
     if args.model_hp :
-        model_hp = model_face_headpose(core, args.device_hp, args.model_hp, log_f)
+        model_hp = model_face_headpose(core, args.model_hp, device=args.device_hp, log_f=log_f)
     
     # 推論開始
     log.info("Starting inference...")

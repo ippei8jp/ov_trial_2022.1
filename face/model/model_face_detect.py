@@ -15,14 +15,14 @@ from .sync_model_base import sync_model_base
 from DispFrame import console_print
 
 class model_face_detect(sync_model_base) :
-    def __init__(self, core, device, model_xml, prob_threshold, clip_ratio, log_f) :
-        self.prob_threshold = prob_threshold
-        self.clip_ratio     = clip_ratio
-        self.log_f          = log_f
+    def __init__(self, core, model_xml, device="CPU", threshold=0.5, clip_ratio=1.2, log_f=None) :
+        # 親クラスの初期化をcall
+        super().__init__(core, model_xml, device=device, threshold=threshold, log_f=log_f)
 
-        # IR(Intermediate Representation ;中間表現)ファイル(.xml & .bin) の読み込み
-        self.load_model(core, model_xml)
-        
+        self.clip_ratio     = clip_ratio
+
+    # output blobの確認 ===============================================
+    def check_output_blob(self) :
         # 出力レイヤ数のチェックと名前の取得
         log.info("Check outputs")
         outputs = self.model.outputs
@@ -45,12 +45,6 @@ class model_face_detect(sync_model_base) :
                 self.output_blob_name = target_blob_name                # 出力レイヤ名
             else :
                 raise ValueError(f'output type unknown : output names={target_blob_name}')
-        
-        # 入力レイヤ数のチェックと名前の取得
-        self.check_input_blob()
-        
-        # モデルのコンパイル&推論キュー作成
-        self.make_infer_queue(core, device)
     
     # 結果の解析 ===============================================
     def analyze_result(self, res, params) :
@@ -86,7 +80,7 @@ class model_face_detect(sync_model_base) :
             else :
                 raise ValueError('output type unknown')
                 
-            if conf > self.prob_threshold:          # 閾値より大きいものだけ処理
+            if conf > self.threshold:               # 閾値より大きいものだけ処理
                 pt1 = pt1.astype(int)               # 整数化
                 pt2 = pt2.astype(int)               
                 size = pt2 - pt1                    # 範囲のサイズ
